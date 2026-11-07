@@ -56,6 +56,7 @@ import com.subnexa.app.domain.parser.TimeUtils
 import com.subnexa.app.ui.theme.Accent
 import com.subnexa.app.ui.theme.Border
 import com.subnexa.app.ui.theme.MonospaceTimestampStyle
+import com.subnexa.app.ui.theme.SubtitleFontFamily
 import com.subnexa.app.ui.theme.Surface
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
@@ -133,6 +134,7 @@ fun VideoPlayerSection(
             color = Color(appearance.textColorHex),
             fontSize = appearance.fontSizeSp.sp,
             lineHeight = (appearance.fontSizeSp * 1.35f).sp,
+            fontFamily = SubtitleFontFamily,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             modifier = Modifier

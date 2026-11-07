@@ -74,6 +74,7 @@ import com.subnexa.app.ui.theme.Border
 import com.subnexa.app.ui.theme.DangerRed
 import com.subnexa.app.ui.theme.InputBorder
 import com.subnexa.app.ui.theme.MonospaceTimestampStyle
+import com.subnexa.app.ui.theme.SubtitleFontFamily
 import com.subnexa.app.ui.theme.Surface
 import com.subnexa.app.ui.theme.SurfaceVariant
 import com.subnexa.app.ui.theme.SwatchCyan
@@ -698,6 +699,7 @@ fun AppearanceBottomSheet(
           text = "Preview: Subtitle caption styling",
           color = Color(textColorHex),
           fontSize = fontSize.sp,
+          fontFamily = SubtitleFontFamily,
           fontWeight = FontWeight.Medium,
           modifier = Modifier
             .clip(RoundedCornerShape(4.dp))

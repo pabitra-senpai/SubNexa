@@ -111,4 +111,26 @@ class SubtitleParserTest {
     assertTrue(vtt.startsWith("WEBVTT\n\n"))
     assertTrue(vtt.contains("00:00:01.000 --> 00:00:03.000\nHello"))
   }
+
+  @Test
+  fun testBengaliAndHindiSubtitleParsingAndExport() {
+    val srt = """
+      1
+      00:00:01,200 --> 00:00:04,500
+      বাংলা সাবটাইটেল সম্পাদন ও সিঙ্ক
+
+      2
+      00:00:05,000 --> 00:00:08,000
+      नमस्ते दुनिया! हिंदी उपशीर्षক
+    """.trimIndent()
+
+    val result = SubtitleParser.parseText(srt, "multilingual.srt")
+    assertEquals(2, result.entries.size)
+    assertEquals("বাংলা সাবটাইটেল সম্পাদন ও সিঙ্ক", result.entries[0].text)
+    assertEquals("नमस्ते दुनिया! हिंदी उपशीर्षক", result.entries[1].text)
+
+    val exportedSrt = SubtitleExporter.generateSrtContent(result.entries)
+    assertTrue(exportedSrt.contains("বাংলা সাবটাইটেল সম্পাদন ও সিঙ্ক"))
+    assertTrue(exportedSrt.contains("नमस्ते दुनिया! हिंदी उपशीर्षক"))
+  }
 }
