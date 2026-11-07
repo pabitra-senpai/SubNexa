@@ -8,7 +8,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.subnexa.kqwzrv"
+    applicationId = "com.subnexa.app"
     minSdk = 26
     targetSdk = 36
     versionCode = 1

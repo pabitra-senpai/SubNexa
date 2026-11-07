@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/assets/aistudio/icon-512_bf6186f1.png" alt="SubNexa icon" width="110" />
+<img src="docs/icon.png" alt="SubNexa icon" width="110" />
 
 # SubNexa
 
