@@ -81,7 +81,7 @@ It is built for the common problem of a subtitle file that is slightly off: wron
 ## Project structure
 
 ```
-app/src/main/java/com/example/
+app/src/main/java/com/subnexa/app/
 ├── MainActivity.kt
 ├── data/            # Project and settings repositories
 ├── domain/
