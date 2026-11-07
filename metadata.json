@@ -1,0 +1,6 @@
+{
+  "name": "SubNexa",
+  "description": "Offline-first Android subtitle editor to preview, edit, sync, and export SRT and VTT subtitles with video playback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
