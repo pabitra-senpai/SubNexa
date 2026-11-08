@@ -4,29 +4,22 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,10 +27,13 @@ import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,16 +43,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.subnexa.app.domain.font.FontManager
 import com.subnexa.app.domain.font.SubtitleFontItem
 import com.subnexa.app.ui.theme.Accent
@@ -68,6 +61,7 @@ import com.subnexa.app.ui.theme.TextMuted
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubtitleFontSelector(
   selectedFontId: String,
@@ -177,209 +171,166 @@ fun SubtitleFontSelector(
     }
   }
 
-  // Modal sheet dialog for selecting fonts
+  // Material3 ModalBottomSheet for selecting fonts
   if (showFontPicker) {
-    Dialog(
-      onDismissRequest = { showFontPicker = false },
-      properties = DialogProperties(
-        usePlatformDefaultWidth = false,
-        decorFitsSystemWindows = false
-      )
-    ) {
-      BoxWithConstraints(
-        modifier = Modifier
-          .fillMaxSize()
-          .background(Color.Black.copy(alpha = 0.65f))
-          .clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = { showFontPicker = false }
-          ),
-        contentAlignment = Alignment.BottomCenter
-      ) {
-        val maxSheetHeight = maxHeight * 0.75f
-        val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        val bottomPadding = max(32.dp, navBottom + 32.dp)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    val maxSheetHeight = screenHeight * 0.75f
 
-        Box(
+    ModalBottomSheet(
+      onDismissRequest = { showFontPicker = false },
+      sheetState = sheetState,
+      containerColor = Surface,
+      shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(max = maxSheetHeight)
+          .padding(horizontal = 20.dp)
+          .navigationBarsPadding()
+      ) {
+        // 1. Header row
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "Select Subtitle Font",
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontWeight = FontWeight.SemiBold,
+              fontSize = 16.sp
+            ),
+            color = TextPrimary
+          )
+          IconButton(
+            onClick = { showFontPicker = false },
+            modifier = Modifier.size(32.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.Close,
+              contentDescription = "Close",
+              tint = TextSecondary,
+              modifier = Modifier.size(20.dp)
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 2. Import font button at TOP of sheet (above font list)
+        SecondarySubNexaButton(
+          text = "Import font... (.ttf, .otf)",
+          onClick = {
+            fontPickerLauncher.launch(arrayOf("*/*"))
+          },
           modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = maxSheetHeight)
-            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            .background(Surface)
-            .border(
-              BorderStroke(0.5.dp, Border),
-              RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-            )
-            .clickable(
-              interactionSource = remember { MutableInteractionSource() },
-              indication = null,
-              onClick = {} // Consume click inside dialog content
-            )
+            .testTag("import_font_button")
+        )
+
+        if (errorMessage != null) {
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = errorMessage!!,
+            style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
+          )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // 3. Scrollable list of fonts
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = false)
+            .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-          Column(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp)
-              .padding(top = 14.dp)
-          ) {
-            // 1. Drag handle
-            Box(
-              modifier = Modifier
-                .width(36.dp)
-                .height(4.dp)
-                .clip(CircleShape)
-                .background(Border)
-                .align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 2. Header row
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = "Select Subtitle Font",
-                style = MaterialTheme.typography.titleMedium.copy(
-                  fontWeight = FontWeight.SemiBold,
-                  fontSize = 16.sp
-                ),
-                color = TextPrimary
-              )
-              IconButton(
-                onClick = { showFontPicker = false },
-                modifier = Modifier.size(32.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Close,
-                  contentDescription = "Close",
-                  tint = TextSecondary,
-                  modifier = Modifier.size(20.dp)
-                )
-              }
+          availableFonts.forEach { item ->
+            val isSelected = item.id == selectedFontId
+            val fontSample = remember(item.id) {
+              FontManager.resolveFontFamily(context, item.id)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 3. Scrollable list of fonts (takes remaining space, scrolls if long)
-            Column(
+            Box(
               modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false)
-                .verticalScroll(rememberScrollState()),
-              verticalArrangement = Arrangement.spacedBy(6.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (isSelected) SurfaceVariant else Surface)
+                .border(
+                  width = if (isSelected) 1.5.dp else 0.5.dp,
+                  color = if (isSelected) Accent else Border,
+                  shape = RoundedCornerShape(8.dp)
+                )
+                .clickable {
+                  onFontSelected(item.id)
+                  showFontPicker = false
+                }
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .testTag("font_option_${item.id}")
             ) {
-              availableFonts.forEach { item ->
-                val isSelected = item.id == selectedFontId
-                val fontSample = remember(item.id) {
-                  FontManager.resolveFontFamily(context, item.id)
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = item.displayName,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                      fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                      fontSize = 14.sp
+                    ),
+                    color = if (isSelected) TextPrimary else TextSecondary
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "বাংলা • English • हिंदी",
+                    fontFamily = fontSample,
+                    fontSize = 13.sp,
+                    color = if (isSelected) Accent else TextMuted
+                  )
                 }
 
-                Box(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (isSelected) SurfaceVariant else Surface)
-                    .border(
-                      width = if (isSelected) 1.5.dp else 0.5.dp,
-                      color = if (isSelected) Accent else Border,
-                      shape = RoundedCornerShape(8.dp)
-                    )
-                    .clickable {
-                      onFontSelected(item.id)
-                      showFontPicker = false
-                    }
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-                    .testTag("font_option_${item.id}")
-                ) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                      Text(
-                        text = item.displayName,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                          fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                          fontSize = 14.sp
-                        ),
-                        color = if (isSelected) TextPrimary else TextSecondary
-                      )
-                      Spacer(modifier = Modifier.height(2.dp))
-                      Text(
-                        text = "বাংলা • English • हिंदी",
-                        fontFamily = fontSample,
-                        fontSize = 13.sp,
-                        color = if (isSelected) Accent else TextMuted
-                      )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                      if (item.isCustom) {
-                        IconButton(
-                          onClick = {
-                            FontManager.deleteCustomFont(context, item.id)
-                            availableFonts = FontManager.getAvailableFonts(context)
-                            if (selectedFontId == item.id) {
-                              onFontSelected(FontManager.DEFAULT_FONT_ID)
-                            }
-                          },
-                          modifier = Modifier.size(32.dp)
-                        ) {
-                          Icon(
-                            imageVector = Icons.Outlined.Delete,
-                            contentDescription = "Delete font",
-                            tint = TextMuted,
-                            modifier = Modifier.size(16.dp)
-                          )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  if (item.isCustom) {
+                    IconButton(
+                      onClick = {
+                        FontManager.deleteCustomFont(context, item.id)
+                        availableFonts = FontManager.getAvailableFonts(context)
+                        if (selectedFontId == item.id) {
+                          onFontSelected(FontManager.DEFAULT_FONT_ID)
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
-                      }
-
-                      if (isSelected) {
-                        Icon(
-                          imageVector = Icons.Outlined.Check,
-                          contentDescription = "Selected",
-                          tint = Accent,
-                          modifier = Modifier.size(20.dp)
-                        )
-                      }
+                      },
+                      modifier = Modifier.size(32.dp)
+                    ) {
+                      Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = "Delete font",
+                        tint = TextMuted,
+                        modifier = Modifier.size(16.dp)
+                      )
                     }
+                    Spacer(modifier = Modifier.width(6.dp))
+                  }
+
+                  if (isSelected) {
+                    Icon(
+                      imageVector = Icons.Outlined.Check,
+                      contentDescription = "Selected",
+                      tint = Accent,
+                      modifier = Modifier.size(20.dp)
+                    )
                   }
                 }
               }
             }
-
-            // 4. Pinned footer with error message (if any) and Import button
-            Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp)
-                .padding(bottom = bottomPadding)
-            ) {
-              if (errorMessage != null) {
-                Text(
-                  text = errorMessage!!,
-                  style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-              }
-
-              SecondarySubNexaButton(
-                text = "Import font... (.ttf, .otf)",
-                onClick = {
-                  fontPickerLauncher.launch(arrayOf("*/*"))
-                },
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .testTag("import_font_button")
-              )
-            }
           }
+
+          // Bottom padding inside scroll content so last item is never hidden under the navigation bar
+          Spacer(modifier = Modifier.height(40.dp))
         }
       }
     }
