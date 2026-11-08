@@ -11,17 +11,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -178,10 +181,11 @@ fun SubtitleFontSelector(
     Dialog(
       onDismissRequest = { showFontPicker = false },
       properties = DialogProperties(
-        usePlatformDefaultWidth = false
+        usePlatformDefaultWidth = false,
+        decorFitsSystemWindows = false
       )
     ) {
-      Box(
+      BoxWithConstraints(
         modifier = Modifier
           .fillMaxSize()
           .background(Color.Black.copy(alpha = 0.65f))
@@ -192,9 +196,13 @@ fun SubtitleFontSelector(
           ),
         contentAlignment = Alignment.BottomCenter
       ) {
+        val maxSheetHeight = maxHeight * 0.85f
+        val fontListMaxHeight = maxHeight * 0.55f
+
         Box(
           modifier = Modifier
             .fillMaxWidth()
+            .heightIn(max = maxSheetHeight)
             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(Surface)
             .border(
@@ -210,10 +218,10 @@ fun SubtitleFontSelector(
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .navigationBarsPadding()
-              .padding(horizontal = 16.dp, vertical = 14.dp)
+              .padding(horizontal = 16.dp)
+              .padding(top = 14.dp)
           ) {
-            // Drag handle
+            // 1. Drag handle
             Box(
               modifier = Modifier
                 .width(36.dp)
@@ -225,7 +233,7 @@ fun SubtitleFontSelector(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Header row
+            // 2. Header row
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -254,11 +262,12 @@ fun SubtitleFontSelector(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Scrollable list of fonts
+            // 3. Scrollable list of fonts (takes remaining space, scrolls if long)
             Column(
               modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 380.dp)
+                .weight(1f, fill = false)
+                .heightIn(max = fontListMaxHeight)
                 .verticalScroll(rememberScrollState()),
               verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -342,18 +351,24 @@ fun SubtitleFontSelector(
                   }
                 }
               }
+            }
 
+            // 4. Pinned footer with error message (if any) and Import button
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 20.dp)
+            ) {
               if (errorMessage != null) {
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                   text = errorMessage!!,
                   style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
                 )
+                Spacer(modifier = Modifier.height(8.dp))
               }
 
-              Spacer(modifier = Modifier.height(4.dp))
-
-              // Import font button
               SecondarySubNexaButton(
                 text = "Import font... (.ttf, .otf)",
                 onClick = {
