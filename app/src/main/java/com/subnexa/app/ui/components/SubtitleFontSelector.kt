@@ -4,30 +4,39 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.FontDownload
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,8 +48,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.subnexa.app.domain.font.FontManager
 import com.subnexa.app.domain.font.SubtitleFontItem
 import com.subnexa.app.ui.theme.Accent
@@ -60,7 +72,15 @@ fun SubtitleFontSelector(
 ) {
   val context = LocalContext.current
   var availableFonts by remember { mutableStateOf(FontManager.getAvailableFonts(context)) }
+  var showFontPicker by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  // Refresh available fonts whenever picker is opened
+  LaunchedEffect(showFontPicker) {
+    if (showFontPicker) {
+      availableFonts = FontManager.getAvailableFonts(context)
+    }
+  }
 
   val fontPickerLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.OpenDocument()
@@ -70,6 +90,7 @@ fun SubtitleFontSelector(
       result.onSuccess { newItem ->
         availableFonts = FontManager.getAvailableFonts(context)
         onFontSelected(newItem.id)
+        showFontPicker = false
         errorMessage = null
         Toast.makeText(context, "Font imported: ${newItem.displayName}", Toast.LENGTH_SHORT).show()
       }.onFailure { error ->
@@ -78,6 +99,16 @@ fun SubtitleFontSelector(
         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
       }
     }
+  }
+
+  val selectedFontItem = remember(selectedFontId, availableFonts) {
+    availableFonts.firstOrNull { it.id == selectedFontId }
+      ?: FontManager.BUILT_IN_FONTS.firstOrNull { it.id == selectedFontId }
+      ?: SubtitleFontItem(selectedFontId, selectedFontId)
+  }
+
+  val selectedFontFamily = remember(selectedFontId) {
+    FontManager.resolveFontFamily(context, selectedFontId)
   }
 
   Column(modifier = modifier.fillMaxWidth()) {
@@ -89,109 +120,253 @@ fun SubtitleFontSelector(
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    // List of available fonts
-    Column(
-      modifier = Modifier.fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(8.dp)
+    // Single compact tappable row
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(8.dp))
+        .background(Surface)
+        .border(
+          width = 0.5.dp,
+          color = Border,
+          shape = RoundedCornerShape(8.dp)
+        )
+        .clickable { showFontPicker = true }
+        .padding(horizontal = 14.dp, vertical = 10.dp)
+        .testTag("subtitle_font_selector_trigger")
     ) {
-      availableFonts.forEach { item ->
-        val isSelected = item.id == selectedFontId
-        val fontSample = remember(item.id) {
-          FontManager.resolveFontFamily(context, item.id)
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = selectedFontItem.displayName,
+            style = MaterialTheme.typography.bodyMedium.copy(
+              fontWeight = FontWeight.Normal,
+              fontSize = 14.sp
+            ),
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Spacer(modifier = Modifier.height(2.dp))
+          Text(
+            text = "বাংলা • English • हिंदी",
+            fontFamily = selectedFontFamily,
+            fontSize = 13.sp,
+            color = Accent,
+            maxLines = 1
+          )
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Icon(
+          imageVector = Icons.Outlined.ArrowDropDown,
+          contentDescription = "Select font",
+          tint = TextSecondary,
+          modifier = Modifier.size(24.dp)
+        )
+      }
+    }
+  }
+
+  // Modal sheet dialog for selecting fonts
+  if (showFontPicker) {
+    Dialog(
+      onDismissRequest = { showFontPicker = false },
+      properties = DialogProperties(
+        usePlatformDefaultWidth = false
+      )
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color.Black.copy(alpha = 0.65f))
+          .clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = { showFontPicker = false }
+          ),
+        contentAlignment = Alignment.BottomCenter
+      ) {
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) SurfaceVariant else Surface)
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(Surface)
             .border(
-              width = if (isSelected) 1.5.dp else 0.5.dp,
-              color = if (isSelected) Accent else Border,
-              shape = RoundedCornerShape(8.dp)
+              BorderStroke(0.5.dp, Border),
+              RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
             )
-            .clickable { onFontSelected(item.id) }
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .testTag("font_option_${item.id}")
+            .clickable(
+              interactionSource = remember { MutableInteractionSource() },
+              indication = null,
+              onClick = {} // Consume click inside dialog content
+            )
         ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .navigationBarsPadding()
+              .padding(horizontal = 16.dp, vertical = 14.dp)
           ) {
-            Column(modifier = Modifier.weight(1f)) {
+            // Drag handle
+            Box(
+              modifier = Modifier
+                .width(36.dp)
+                .height(4.dp)
+                .clip(CircleShape)
+                .background(Border)
+                .align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Header row
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
               Text(
-                text = item.displayName,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                  fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                  fontSize = 14.sp
+                text = "Select Subtitle Font",
+                style = MaterialTheme.typography.titleMedium.copy(
+                  fontWeight = FontWeight.SemiBold,
+                  fontSize = 16.sp
                 ),
-                color = if (isSelected) TextPrimary else TextSecondary
+                color = TextPrimary
               )
-              Spacer(modifier = Modifier.height(2.dp))
-              Text(
-                text = "বাংলা • English • हिंदी",
-                fontFamily = fontSample,
-                fontSize = 13.sp,
-                color = if (isSelected) Accent else TextMuted
-              )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              if (item.isCustom) {
-                IconButton(
-                  onClick = {
-                    FontManager.deleteCustomFont(context, item.id)
-                    availableFonts = FontManager.getAvailableFonts(context)
-                    if (selectedFontId == item.id) {
-                      onFontSelected(FontManager.DEFAULT_FONT_ID)
-                    }
-                  },
-                  modifier = Modifier.size(32.dp)
-                ) {
-                  Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = "Delete font",
-                    tint = TextMuted,
-                    modifier = Modifier.size(16.dp)
-                  )
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-              }
-
-              if (isSelected) {
+              IconButton(
+                onClick = { showFontPicker = false },
+                modifier = Modifier.size(32.dp)
+              ) {
                 Icon(
-                  imageVector = Icons.Outlined.Check,
-                  contentDescription = "Selected",
-                  tint = Accent,
+                  imageVector = Icons.Outlined.Close,
+                  contentDescription = "Close",
+                  tint = TextSecondary,
                   modifier = Modifier.size(20.dp)
                 )
               }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Scrollable list of fonts
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 380.dp)
+                .verticalScroll(rememberScrollState()),
+              verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              availableFonts.forEach { item ->
+                val isSelected = item.id == selectedFontId
+                val fontSample = remember(item.id) {
+                  FontManager.resolveFontFamily(context, item.id)
+                }
+
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSelected) SurfaceVariant else Surface)
+                    .border(
+                      width = if (isSelected) 1.5.dp else 0.5.dp,
+                      color = if (isSelected) Accent else Border,
+                      shape = RoundedCornerShape(8.dp)
+                    )
+                    .clickable {
+                      onFontSelected(item.id)
+                      showFontPicker = false
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .testTag("font_option_${item.id}")
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                      Text(
+                        text = item.displayName,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                          fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                          fontSize = 14.sp
+                        ),
+                        color = if (isSelected) TextPrimary else TextSecondary
+                      )
+                      Spacer(modifier = Modifier.height(2.dp))
+                      Text(
+                        text = "বাংলা • English • हिंदी",
+                        fontFamily = fontSample,
+                        fontSize = 13.sp,
+                        color = if (isSelected) Accent else TextMuted
+                      )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      if (item.isCustom) {
+                        IconButton(
+                          onClick = {
+                            FontManager.deleteCustomFont(context, item.id)
+                            availableFonts = FontManager.getAvailableFonts(context)
+                            if (selectedFontId == item.id) {
+                              onFontSelected(FontManager.DEFAULT_FONT_ID)
+                            }
+                          },
+                          modifier = Modifier.size(32.dp)
+                        ) {
+                          Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = "Delete font",
+                            tint = TextMuted,
+                            modifier = Modifier.size(16.dp)
+                          )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                      }
+
+                      if (isSelected) {
+                        Icon(
+                          imageVector = Icons.Outlined.Check,
+                          contentDescription = "Selected",
+                          tint = Accent,
+                          modifier = Modifier.size(20.dp)
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = errorMessage!!,
+                  style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
+                )
+              }
+
+              Spacer(modifier = Modifier.height(4.dp))
+
+              // Import font button
+              SecondarySubNexaButton(
+                text = "Import font... (.ttf, .otf)",
+                onClick = {
+                  fontPickerLauncher.launch(arrayOf("*/*"))
+                },
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .testTag("import_font_button")
+              )
             }
           }
         }
       }
     }
-
-    if (errorMessage != null) {
-      Spacer(modifier = Modifier.height(6.dp))
-      Text(
-        text = errorMessage!!,
-        style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
-      )
-    }
-
-    Spacer(modifier = Modifier.height(10.dp))
-
-    // Import font button
-    SecondarySubNexaButton(
-      text = "Import font... (.ttf, .otf)",
-      onClick = {
-        fontPickerLauncher.launch(arrayOf("*/*"))
-      },
-      modifier = Modifier
-        .fillMaxWidth()
-        .testTag("import_font_button")
-    )
   }
 }

@@ -11,6 +11,7 @@ import com.subnexa.app.ui.theme.NotoSansBengaliFamily
 import com.subnexa.app.ui.theme.NotoSansDevanagariFamily
 import com.subnexa.app.ui.theme.NotoSerifBengaliFamily
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 
@@ -139,6 +140,21 @@ object FontManager {
           output.flush()
         }
       } ?: return Result.failure(IllegalStateException("Cannot open input stream for selected font"))
+
+      // Check first 4 bytes: TrueType (00 01 00 00), OpenType ("OTTO"), "true", or "ttcf"
+      val header = ByteArray(4)
+      val readCount = FileInputStream(cacheFile).use { it.read(header) }
+      val isValidMagic = readCount == 4 && (
+        (header[0] == 0x00.toByte() && header[1] == 0x01.toByte() && header[2] == 0x00.toByte() && header[3] == 0x00.toByte()) ||
+        (header[0] == 'O'.code.toByte() && header[1] == 'T'.code.toByte() && header[2] == 'T'.code.toByte() && header[3] == 'O'.code.toByte()) ||
+        (header[0] == 't'.code.toByte() && header[1] == 'r'.code.toByte() && header[2] == 'u'.code.toByte() && header[3] == 'e'.code.toByte()) ||
+        (header[0] == 't'.code.toByte() && header[1] == 't'.code.toByte() && header[2] == 'c'.code.toByte() && header[3] == 'f'.code.toByte())
+      )
+
+      if (!isValidMagic) {
+        cacheFile.delete()
+        return Result.failure(IllegalArgumentException("This file cannot be used as a font"))
+      }
 
       // Validate font loading with Typeface
       val testTypeface = try {
