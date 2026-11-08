@@ -175,8 +175,7 @@ fun SubtitleFontSelector(
   // Material3 ModalBottomSheet for selecting fonts
   if (showFontPicker) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val maxSheetHeight = screenHeight * 0.75f
+    val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.70f
 
     ModalBottomSheet(
       onDismissRequest = { showFontPicker = false },
@@ -185,8 +184,8 @@ fun SubtitleFontSelector(
       shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
       dragHandle = {
         Box(
-          modifier = Modifier
-            .padding(vertical = 12.dp)
+          Modifier
+            .padding(vertical = 10.dp)
             .width(36.dp)
             .height(4.dp)
             .clip(CircleShape)
