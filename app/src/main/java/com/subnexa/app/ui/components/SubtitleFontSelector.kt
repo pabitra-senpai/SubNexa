@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -181,7 +182,17 @@ fun SubtitleFontSelector(
       onDismissRequest = { showFontPicker = false },
       sheetState = sheetState,
       containerColor = Surface,
-      shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+      shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+      dragHandle = {
+        Box(
+          modifier = Modifier
+            .padding(vertical = 12.dp)
+            .width(36.dp)
+            .height(4.dp)
+            .clip(CircleShape)
+            .background(Border)
+        )
+      }
     ) {
       Column(
         modifier = Modifier
@@ -231,14 +242,15 @@ fun SubtitleFontSelector(
         )
 
         if (errorMessage != null) {
-          Spacer(modifier = Modifier.height(8.dp))
+          Spacer(modifier = Modifier.height(6.dp))
           Text(
             text = errorMessage!!,
             style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
           )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        // 10.dp gap between the Import font button (or error) and the font list
+        Spacer(modifier = Modifier.height(10.dp))
 
         // 3. Scrollable list of fonts
         Column(
