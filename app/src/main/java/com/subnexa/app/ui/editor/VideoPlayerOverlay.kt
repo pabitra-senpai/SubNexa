@@ -33,14 +33,17 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.subnexa.app.domain.font.FontManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -79,6 +82,11 @@ fun VideoPlayerSection(
   onToggleFullscreen: () -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val context = LocalContext.current
+  val subtitleFont = remember(appearance.fontId) {
+    FontManager.resolveFontFamily(context, appearance.fontId)
+  }
+
   Box(
     modifier = modifier
       .background(Color.Black)
@@ -134,7 +142,7 @@ fun VideoPlayerSection(
             color = Color(appearance.textColorHex),
             fontSize = appearance.fontSizeSp.sp,
             lineHeight = (appearance.fontSizeSp * 1.35f).sp,
-            fontFamily = SubtitleFontFamily,
+            fontFamily = subtitleFont,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             modifier = Modifier

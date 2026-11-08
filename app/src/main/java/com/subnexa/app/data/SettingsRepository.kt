@@ -24,6 +24,7 @@ class SettingsRepository(private val context: Context) {
     val TEXT_COLOR = longPreferencesKey("pref_text_color")
     val BG_MODE = stringPreferencesKey("pref_bg_mode")
     val POSITION = stringPreferencesKey("pref_position")
+    val SUBTITLE_FONT_ID = stringPreferencesKey("pref_subtitle_font_id")
     val EXPORT_FORMAT = stringPreferencesKey("pref_export_format")
     val EXPORT_FOLDER_URI = stringPreferencesKey("pref_export_folder_uri")
   }
@@ -33,6 +34,7 @@ class SettingsRepository(private val context: Context) {
     val colorHex = prefs[PrefKeys.TEXT_COLOR] ?: 0xFFFFFFFFL
     val bgModeStr = prefs[PrefKeys.BG_MODE] ?: BgMode.DIM.name
     val posStr = prefs[PrefKeys.POSITION] ?: SubtitlePosition.BOTTOM.name
+    val fontId = prefs[PrefKeys.SUBTITLE_FONT_ID] ?: "hind_siliguri"
 
     val bgMode = try { BgMode.valueOf(bgModeStr) } catch (_: Exception) { BgMode.DIM }
     val pos = try { SubtitlePosition.valueOf(posStr) } catch (_: Exception) { SubtitlePosition.BOTTOM }
@@ -41,7 +43,8 @@ class SettingsRepository(private val context: Context) {
       fontSizeSp = fontSize,
       textColorHex = colorHex,
       bgMode = bgMode,
-      position = pos
+      position = pos,
+      fontId = fontId
     )
   }
 
@@ -60,6 +63,7 @@ class SettingsRepository(private val context: Context) {
       prefs[PrefKeys.TEXT_COLOR] = appearance.textColorHex
       prefs[PrefKeys.BG_MODE] = appearance.bgMode.name
       prefs[PrefKeys.POSITION] = appearance.position.name
+      prefs[PrefKeys.SUBTITLE_FONT_ID] = appearance.fontId
     }
   }
 

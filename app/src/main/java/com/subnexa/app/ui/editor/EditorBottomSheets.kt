@@ -52,8 +52,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import com.subnexa.app.domain.font.FontManager
+import com.subnexa.app.ui.components.SubtitleFontSelector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -635,10 +638,18 @@ fun AppearanceBottomSheet(
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+  val context = LocalContext.current
+  val scrollState = rememberScrollState()
+
   var fontSize by remember { mutableFloatStateOf(initialAppearance.fontSizeSp) }
   var textColorHex by remember { mutableLongStateOf(initialAppearance.textColorHex) }
   var bgMode by remember { mutableStateOf(initialAppearance.bgMode) }
   var position by remember { mutableStateOf(initialAppearance.position) }
+  var fontId by remember { mutableStateOf(initialAppearance.fontId) }
+
+  val previewFont = remember(fontId) {
+    FontManager.resolveFontFamily(context, fontId)
+  }
 
   fun notifyChange() {
     onAppearanceChanged(
@@ -646,7 +657,8 @@ fun AppearanceBottomSheet(
         fontSizeSp = fontSize,
         textColorHex = textColorHex,
         bgMode = bgMode,
-        position = position
+        position = position,
+        fontId = fontId
       )
     )
   }
@@ -663,6 +675,7 @@ fun AppearanceBottomSheet(
         .padding(horizontal = 20.dp)
         .navigationBarsPadding()
         .imePadding()
+        .verticalScroll(scrollState)
     ) {
       Text(
         text = "Subtitle appearance",
@@ -696,10 +709,10 @@ fun AppearanceBottomSheet(
           BgMode.SOLID -> Color(0xFF000000)
         }
         Text(
-          text = "Preview: Subtitle caption styling",
+          text = "Preview: Subtitle caption styling / বাংলা সাবটাইটেল",
           color = Color(textColorHex),
           fontSize = fontSize.sp,
-          fontFamily = SubtitleFontFamily,
+          fontFamily = previewFont,
           fontWeight = FontWeight.Medium,
           modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
@@ -807,6 +820,17 @@ fun AppearanceBottomSheet(
           notifyChange()
         },
         label = { it.displayName }
+      )
+
+      Spacer(modifier = Modifier.height(16.dp))
+
+      // Subtitle font selector
+      SubtitleFontSelector(
+        selectedFontId = fontId,
+        onFontSelected = {
+          fontId = it
+          notifyChange()
+        }
       )
 
       Spacer(modifier = Modifier.height(24.dp))

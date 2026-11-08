@@ -10,26 +10,41 @@ import com.subnexa.app.R
 
 val PlusJakartaSansFamily = FontFamily(
   Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-  Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-  Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
   Font(R.font.plus_jakarta_sans, FontWeight.Bold)
 )
 
 val HindSiliguriFamily = FontFamily(
-  Font(R.font.hind_siliguri, FontWeight.Normal),
-  Font(R.font.hind_siliguri, FontWeight.Medium),
-  Font(R.font.hind_siliguri, FontWeight.SemiBold),
-  Font(R.font.hind_siliguri, FontWeight.Bold)
+  Font(R.font.hind_siliguri_regular, FontWeight.Normal),
+  Font(R.font.hind_siliguri_medium, FontWeight.Medium),
+  Font(R.font.hind_siliguri_semibold, FontWeight.SemiBold),
+  Font(R.font.hind_siliguri_bold, FontWeight.Bold)
+)
+
+val NotoSansBengaliFamily = FontFamily(
+  Font(R.font.noto_sans_bengali_regular, FontWeight.Normal),
+  Font(R.font.noto_sans_bengali_bold, FontWeight.Bold)
+)
+
+val NotoSerifBengaliFamily = FontFamily(
+  Font(R.font.noto_serif_bengali_regular, FontWeight.Normal),
+  Font(R.font.noto_serif_bengali_bold, FontWeight.Bold)
+)
+
+val NotoSansDevanagariFamily = FontFamily(
+  Font(R.font.noto_sans_devanagari_regular, FontWeight.Normal),
+  Font(R.font.noto_sans_devanagari_bold, FontWeight.Bold)
+)
+
+val InterFamily = FontFamily(
+  Font(R.font.inter_regular, FontWeight.Normal)
 )
 
 val JetBrainsMonoFamily = FontFamily(
   Font(R.font.jetbrains_mono, FontWeight.Normal),
-  Font(R.font.jetbrains_mono, FontWeight.Medium),
-  Font(R.font.jetbrains_mono, FontWeight.SemiBold),
   Font(R.font.jetbrains_mono, FontWeight.Bold)
 )
 
-// Subtitle text shown on video overlay - highly readable and fully supports Bengali and Hindi
+// Default subtitle text font family
 val SubtitleFontFamily = HindSiliguriFamily
 
 val Typography = Typography(

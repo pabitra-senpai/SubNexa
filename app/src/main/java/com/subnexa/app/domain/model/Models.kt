@@ -21,7 +21,8 @@ data class SubtitleAppearance(
   val fontSizeSp: Float = 16f,
   val textColorHex: Long = 0xFFFFFFFF,
   val bgMode: BgMode = BgMode.DIM,
-  val position: SubtitlePosition = SubtitlePosition.BOTTOM
+  val position: SubtitlePosition = SubtitlePosition.BOTTOM,
+  val fontId: String = "hind_siliguri"
 )
 
 data class SubtitleEntry(

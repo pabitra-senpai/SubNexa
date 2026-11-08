@@ -53,6 +53,7 @@ import com.subnexa.app.domain.model.ExportFormat
 import com.subnexa.app.domain.model.SubtitlePosition
 import com.subnexa.app.ui.components.HairlineCard
 import com.subnexa.app.ui.components.SegmentedControl
+import com.subnexa.app.ui.components.SubtitleFontSelector
 import com.subnexa.app.ui.theme.Accent
 import com.subnexa.app.ui.theme.Background
 import com.subnexa.app.ui.theme.Border
@@ -277,6 +278,16 @@ fun SettingsScreen(
                 viewModel.updateAppearance(appearance.copy(position = it))
               },
               label = { it.displayName }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Default Subtitle Font
+            SubtitleFontSelector(
+              selectedFontId = appearance.fontId,
+              onFontSelected = {
+                viewModel.updateAppearance(appearance.copy(fontId = it))
+              }
             )
           }
         }

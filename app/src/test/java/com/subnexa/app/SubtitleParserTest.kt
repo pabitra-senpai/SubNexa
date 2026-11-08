@@ -133,4 +133,22 @@ class SubtitleParserTest {
     assertTrue(exportedSrt.contains("বাংলা সাবটাইটেল সম্পাদন ও সিঙ্ক"))
     assertTrue(exportedSrt.contains("नमस्ते दुनिया! हिंदी उपशीर्षক"))
   }
+
+  @Test
+  fun testBengaliComplexConjunctsAndHindiShaping() {
+    val srt = """
+      1
+      00:00:01,000 --> 00:00:05,000
+      বিজ্ঞান, প্রযুক্তি, সৃষ্টি, কৃষ্টি, স্বচ্ছ, কৃষ্ণ, ক্ষমার যোগ্য
+
+      2
+      00:00:06,000 --> 00:00:10,000
+      प्रौद्योगिकी, विद्या, कृष्ण, उज्ज्वल, क्षमा
+    """.trimIndent()
+
+    val result = SubtitleParser.parseText(srt, "conjuncts.srt")
+    assertEquals(2, result.entries.size)
+    assertEquals("বিজ্ঞান, প্রযুক্তি, সৃষ্টি, কৃষ্টি, স্বচ্ছ, কৃষ্ণ, ক্ষমার যোগ্য", result.entries[0].text)
+    assertEquals("प्रौद्योगिकी, विद्या, कृष्ण, उज्ज्वल, क्षमा", result.entries[1].text)
+  }
 }

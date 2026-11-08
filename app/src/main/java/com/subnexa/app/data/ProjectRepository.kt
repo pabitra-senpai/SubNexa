@@ -95,7 +95,8 @@ class ProjectRepository(private val context: Context) {
           fontSizeSp = appObj.optDouble("fontSizeSp", 16.0).toFloat(),
           textColorHex = appObj.optLong("textColorHex", 0xFFFFFFFFL),
           bgMode = try { BgMode.valueOf(appObj.optString("bgMode", "DIM")) } catch (_: Exception) { BgMode.DIM },
-          position = try { SubtitlePosition.valueOf(appObj.optString("position", "BOTTOM")) } catch (_: Exception) { SubtitlePosition.BOTTOM }
+          position = try { SubtitlePosition.valueOf(appObj.optString("position", "BOTTOM")) } catch (_: Exception) { SubtitlePosition.BOTTOM },
+          fontId = appObj.optString("fontId", "hind_siliguri")
         )
       } else {
         SubtitleAppearance()
@@ -152,6 +153,7 @@ class ProjectRepository(private val context: Context) {
           put("textColorHex", project.appearance.textColorHex)
           put("bgMode", project.appearance.bgMode.name)
           put("position", project.appearance.position.name)
+          put("fontId", project.appearance.fontId)
         }
         put("appearance", appObj)
 
