@@ -38,6 +38,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +74,7 @@ import com.subnexa.app.ui.theme.Surface
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -81,7 +83,7 @@ fun VideoPlayerSection(
   activeEntry: SubtitleEntry?,
   appearance: SubtitleAppearance,
   isPlaying: Boolean,
-  currentPositionMs: Long,
+  playbackPositionFlow: StateFlow<Long>,
   durationMs: Long,
   playbackSpeed: Float,
   isFullscreen: Boolean,
@@ -250,107 +252,133 @@ fun VideoPlayerSection(
       }
     }
 
-    // Bottom Controls Bar Overlay
+    // Bottom Controls Bar Overlay - only this composable collects playbackPositionFlow
     AnimatedVisibility(
       visible = areControlsVisible,
       enter = fadeIn(),
       exit = fadeOut(),
       modifier = Modifier.align(Alignment.BottomCenter)
     ) {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .background(Color(0xAA09090B))
-          .clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null
-          ) {
-            resetControlsTimer()
-          }
-          .padding(horizontal = 12.dp, vertical = 4.dp)
-      ) {
-        // Seekbar Scrubber
-        val sliderValue = if (durationMs > 0) {
-          (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-        } else 0f
+      VideoPlayerControlsBottomBar(
+        playbackPositionFlow = playbackPositionFlow,
+        durationMs = durationMs,
+        isPlaying = isPlaying,
+        playbackSpeed = playbackSpeed,
+        onSeekTo = onSeekTo,
+        onTogglePlayPause = onTogglePlayPause,
+        onCycleSpeed = onCycleSpeed,
+        onInteraction = { resetControlsTimer() }
+      )
+    }
+  }
+}
 
-        Slider(
-          value = sliderValue,
-          onValueChange = { frac ->
-            resetControlsTimer()
-            if (durationMs > 0) {
-              onSeekTo((frac * durationMs).toLong())
-            }
+@Composable
+private fun VideoPlayerControlsBottomBar(
+  playbackPositionFlow: StateFlow<Long>,
+  durationMs: Long,
+  isPlaying: Boolean,
+  playbackSpeed: Float,
+  onSeekTo: (Long) -> Unit,
+  onTogglePlayPause: () -> Unit,
+  onCycleSpeed: () -> Unit,
+  onInteraction: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  val currentPositionMs by playbackPositionFlow.collectAsState()
+
+  Column(
+    modifier = modifier
+      .fillMaxWidth()
+      .background(Color(0xAA09090B))
+      .clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null
+      ) {
+        onInteraction()
+      }
+      .padding(horizontal = 12.dp, vertical = 4.dp)
+  ) {
+    // Seekbar Scrubber
+    val sliderValue = if (durationMs > 0) {
+      (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
+    Slider(
+      value = sliderValue,
+      onValueChange = { frac ->
+        onInteraction()
+        if (durationMs > 0) {
+          onSeekTo((frac * durationMs).toLong())
+        }
+      },
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(24.dp)
+        .testTag("video_slider"),
+      colors = SliderDefaults.colors(
+        thumbColor = Accent,
+        activeTrackColor = Accent,
+        inactiveTrackColor = Color(0x55FAFAFA)
+      )
+    )
+
+    // Play/Pause, Timestamp, Speed Chip
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(bottom = 4.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+          onClick = {
+            onInteraction()
+            onTogglePlayPause()
           },
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .testTag("video_slider"),
-          colors = SliderDefaults.colors(
-            thumbColor = Accent,
-            activeTrackColor = Accent,
-            inactiveTrackColor = Color(0x55FAFAFA)
+          modifier = Modifier.size(36.dp).testTag("play_pause_button")
+        ) {
+          Icon(
+            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            contentDescription = if (isPlaying) "Pause" else "Play",
+            tint = Accent,
+            modifier = Modifier.size(24.dp)
+          )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Text(
+          text = TimeUtils.formatDuration(currentPositionMs, durationMs),
+          style = MonospaceTimestampStyle.copy(
+            color = TextPrimary,
+            fontSize = 11.5.sp
           )
         )
+      }
 
-        // Play/Pause, Timestamp, Speed Chip
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 4.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-              onClick = {
-                resetControlsTimer()
-                onTogglePlayPause()
-              },
-              modifier = Modifier.size(36.dp).testTag("play_pause_button")
-            ) {
-              Icon(
-                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                tint = Accent,
-                modifier = Modifier.size(24.dp)
-              )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Text(
-              text = TimeUtils.formatDuration(currentPositionMs, durationMs),
-              style = MonospaceTimestampStyle.copy(
-                color = TextPrimary,
-                fontSize = 11.5.sp
-              )
-            )
+      // Speed chip
+      Box(
+        modifier = Modifier
+          .clip(RoundedCornerShape(6.dp))
+          .background(Surface)
+          .border(0.5.dp, Border, RoundedCornerShape(6.dp))
+          .clickable {
+            onInteraction()
+            onCycleSpeed()
           }
-
-          // Speed chip
-          Box(
-            modifier = Modifier
-              .clip(RoundedCornerShape(6.dp))
-              .background(Surface)
-              .border(0.5.dp, Border, RoundedCornerShape(6.dp))
-              .clickable {
-                resetControlsTimer()
-                onCycleSpeed()
-              }
-              .padding(horizontal = 8.dp, vertical = 4.dp)
-              .testTag("speed_chip")
-          ) {
-            Text(
-              text = "${playbackSpeed}x",
-              style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp
-              ),
-              color = TextPrimary
-            )
-          }
-        }
+          .padding(horizontal = 8.dp, vertical = 4.dp)
+          .testTag("speed_chip")
+      ) {
+        Text(
+          text = "${playbackSpeed}x",
+          style = MaterialTheme.typography.labelSmall.copy(
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 11.sp
+          ),
+          color = TextPrimary
+        )
       }
     }
   }

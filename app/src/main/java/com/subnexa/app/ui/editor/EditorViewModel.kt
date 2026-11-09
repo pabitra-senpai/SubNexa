@@ -70,6 +70,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private val _uiState = MutableStateFlow(EditorUiState())
   val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
+  private val _playbackPositionMs = MutableStateFlow(0L)
+  val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
+
   private val _events = MutableSharedFlow<EditorEvent>()
   val events: SharedFlow<EditorEvent> = _events.asSharedFlow()
 
@@ -96,18 +99,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
       val defaultFolder = settingsRepository.defaultExportFolderUriFlow.first()
       val defaultFormat = settingsRepository.defaultExportFormatFlow.first()
+      val startPos = project.lastPlaybackPositionMs
 
+      _playbackPositionMs.value = startPos
       _uiState.update {
         it.copy(
           isLoading = false,
           project = project,
           defaultExportFolderUri = defaultFolder,
           defaultExportFormat = defaultFormat,
-          currentPositionMs = project.lastPlaybackPositionMs
+          currentPositionMs = startPos
         )
       }
 
-      setupPlayer(project.videoUri, project.lastPlaybackPositionMs)
+      setupPlayer(project.videoUri, startPos)
     }
   }
 
@@ -170,23 +175,27 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val player = exoPlayer ?: break
         val pos = player.currentPosition
         val dur = maxOf(0L, player.duration)
+
+        // Update the high-frequency playback position flow
+        _playbackPositionMs.value = pos
+
         val entries = _uiState.value.project?.entries
         val activeIndex = if (entries != null) SubtitleParser.findActiveIndex(entries, pos) else -1
         val active = if (entries != null && activeIndex != -1) entries[activeIndex] else null
 
+        // Stop updating currentPositionMs in EditorUiState on every tick.
+        // Keep activeEntry and activeIndex in EditorUiState, updated only when they actually change.
         _uiState.update { current ->
-          if (current.currentPositionMs == pos &&
-            current.durationMs == dur &&
-            current.activeEntry == active &&
-            current.activeIndex == activeIndex
+          if (current.activeEntry == active &&
+            current.activeIndex == activeIndex &&
+            current.durationMs == dur
           ) {
             current
           } else {
             current.copy(
-              currentPositionMs = pos,
-              durationMs = dur,
               activeEntry = active,
-              activeIndex = activeIndex
+              activeIndex = activeIndex,
+              durationMs = dur
             )
           }
         }
@@ -198,11 +207,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private fun stopPollingPosition() {
     positionPollingJob?.cancel()
     positionPollingJob = null
-    val pos = exoPlayer?.currentPosition ?: 0L
-    updateActiveEntry(pos)
+    val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
+    _playbackPositionMs.value = pos
+    updatePositionAndActiveEntry(pos)
   }
 
-  private fun updateActiveEntry(positionMs: Long) {
+  private fun updatePositionAndActiveEntry(positionMs: Long) {
     val entries = _uiState.value.project?.entries ?: return
     val index = SubtitleParser.findActiveIndex(entries, positionMs)
     val active = if (index != -1) entries[index] else null
@@ -222,6 +232,24 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
+  private fun updateActiveEntry(positionMs: Long) {
+    val entries = _uiState.value.project?.entries ?: return
+    val index = SubtitleParser.findActiveIndex(entries, positionMs)
+    val active = if (index != -1) entries[index] else null
+    _uiState.update { current ->
+      if (current.activeEntry == active &&
+        current.activeIndex == index
+      ) {
+        current
+      } else {
+        current.copy(
+          activeEntry = active,
+          activeIndex = index
+        )
+      }
+    }
+  }
+
   fun togglePlayPause() {
     val player = exoPlayer ?: return
     if (player.isPlaying) {
@@ -233,12 +261,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   fun pause() {
     exoPlayer?.pause()
+    val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
+    _playbackPositionMs.value = pos
+    updatePositionAndActiveEntry(pos)
   }
 
   fun seekTo(positionMs: Long) {
     val clamped = positionMs.coerceIn(0L, _uiState.value.durationMs.coerceAtLeast(0L))
     exoPlayer?.seekTo(clamped)
-    updateActiveEntry(clamped)
+    _playbackPositionMs.value = clamped
+    updatePositionAndActiveEntry(clamped)
     triggerDebouncedAutosave()
   }
 
@@ -257,7 +289,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   fun openSheet(sheet: EditorSheetState) {
     pause()
-    _uiState.update { it.copy(sheetState = sheet) }
+    val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
+    _playbackPositionMs.value = pos
+    _uiState.update {
+      it.copy(
+        sheetState = sheet,
+        currentPositionMs = pos
+      )
+    }
+    updateActiveEntry(pos)
   }
 
   fun closeSheet() {
@@ -288,7 +328,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     _uiState.update {
       it.copy(project = updatedProject, sheetState = EditorSheetState.None)
     }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
 
     val savedIndex = updatedEntries.indexOf(newEntry)
@@ -322,7 +362,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     _uiState.update {
       it.copy(project = updatedProject, sheetState = EditorSheetState.None)
     }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
 
     val savedIndex = updatedEntries.indexOfFirst { it.id == id }
@@ -342,7 +382,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     )
     deletedEntriesStack.addLast(entry)
     _uiState.update { it.copy(project = updatedProject) }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
 
     viewModelScope.launch {
@@ -366,7 +406,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       lastEditedTimeMs = System.currentTimeMillis()
     )
     _uiState.update { it.copy(project = updatedProject) }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
   }
 
@@ -387,7 +427,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       lastEditedTimeMs = System.currentTimeMillis()
     )
     _uiState.update { it.copy(project = updatedProject) }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
 
     val newIndex = updatedEntries.indexOf(duplicated)
@@ -399,7 +439,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   }
 
   fun splitSubtitleAtPlayhead(entry: SubtitleEntry) {
-    val playhead = _uiState.value.currentPositionMs
+    val playhead = exoPlayer?.currentPosition ?: _playbackPositionMs.value
     if (playhead <= entry.startMs || playhead >= entry.endMs) {
       viewModelScope.launch {
         _events.emit(EditorEvent.ShowSnackbar("Playhead must be inside the subtitle to split"))
@@ -430,7 +470,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       lastEditedTimeMs = System.currentTimeMillis()
     )
     _uiState.update { it.copy(project = updatedProject) }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
   }
 
@@ -460,7 +500,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       lastEditedTimeMs = System.currentTimeMillis()
     )
     _uiState.update { it.copy(project = updatedProject) }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
   }
 
@@ -482,7 +522,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     _uiState.update {
       it.copy(project = updatedProject, sheetState = EditorSheetState.None)
     }
-    updateActiveEntry(_uiState.value.currentPositionMs)
+    updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
 
     viewModelScope.launch {
@@ -540,7 +580,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         lastEditedTimeMs = System.currentTimeMillis()
       )
       _uiState.update { it.copy(project = updated) }
-      updateActiveEntry(_uiState.value.currentPositionMs)
+      updateActiveEntry(_playbackPositionMs.value)
       triggerImmediateSave(updated)
 
       val skipMsg = if (parseResult.skippedCount > 0) " (${parseResult.skippedCount} malformed blocks skipped)" else ""
@@ -601,7 +641,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private fun triggerImmediateSave(project: Project) {
     autosaveJob?.cancel()
     viewModelScope.launch {
-      val pos = exoPlayer?.currentPosition ?: project.lastPlaybackPositionMs
+      val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
       val toSave = project.copy(lastPlaybackPositionMs = pos)
       projectRepository.saveProject(toSave)
     }
@@ -609,7 +649,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   fun saveCurrentStateToDisk() {
     val project = _uiState.value.project ?: return
-    val pos = exoPlayer?.currentPosition ?: project.lastPlaybackPositionMs
+    val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
     val toSave = project.copy(
       lastPlaybackPositionMs = pos,
       lastEditedTimeMs = System.currentTimeMillis()

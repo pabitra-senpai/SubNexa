@@ -3,6 +3,7 @@ package com.subnexa.app
 import com.subnexa.app.domain.exporter.SubtitleExporter
 import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.parser.SubtitleParser
+import com.subnexa.app.domain.parser.TimeUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -10,6 +11,87 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubtitleParserTest {
+
+  @Test
+  fun testTimeUtilsFormatAndParse() {
+    val ms = 3724567L // 01:02:04.567
+    val formattedDot = TimeUtils.formatTimestamp(ms, '.')
+    assertEquals("01:02:04.567", formattedDot)
+
+    val formattedComma = TimeUtils.formatTimestamp(ms, ',')
+    assertEquals("01:02:04,567", formattedComma)
+
+    val parsed = TimeUtils.parseTimestamp(formattedDot)
+    assertEquals(ms, parsed)
+
+    val parsedComma = TimeUtils.parseTimestamp(formattedComma)
+    assertEquals(ms, parsedComma)
+  }
+
+  @Test
+  fun testParseSrtContent() {
+    val srt = """
+      1
+      00:00:01,000 --> 00:00:04,000
+      Hello <i>world</i>!
+
+      2
+      00:00:05.500 --> 00:00:08.200
+      Second subtitle line
+    """.trimIndent()
+
+    val result = SubtitleParser.parseText(srt, "sample.srt")
+    assertEquals(2, result.entries.size)
+    assertEquals(1000L, result.entries[0].startMs)
+    assertEquals(4000L, result.entries[0].endMs)
+    assertEquals("Hello <i>world</i>!", result.entries[0].text)
+    assertEquals("Hello world!", SubtitleParser.stripTags(result.entries[0].text))
+
+    assertEquals(5500L, result.entries[1].startMs)
+    assertEquals(8200L, result.entries[1].endMs)
+    assertEquals("Second subtitle line", result.entries[1].text)
+  }
+
+  @Test
+  fun testParseVttContent() {
+    val vtt = """
+      WEBVTT
+      NOTE This is a comment
+
+      00:01.500 --> 00:04.000 line:90% position:50%
+      <c.yellow>First</c> VTT cue
+
+      00:00:05.000 --> 00:00:09.500
+      Second cue line
+    """.trimIndent()
+
+    val result = SubtitleParser.parseText(vtt, "sample.vtt")
+    assertEquals(2, result.entries.size)
+    assertEquals(1500L, result.entries[0].startMs)
+    assertEquals(4000L, result.entries[0].endMs)
+    assertEquals("First VTT cue", SubtitleParser.stripTags(result.entries[0].text))
+
+    assertEquals(5000L, result.entries[1].startMs)
+    assertEquals(9500L, result.entries[1].endMs)
+  }
+
+  @Test
+  fun testBengaliComplexConjunctsAndHindiShaping() {
+    val srt = """
+      1
+      00:00:01,000 --> 00:00:05,000
+      বিজ্ঞান, প্রযুক্তি, সৃষ্টি, কৃষ্টি, স্বচ্ছ, কৃষ্ণ, ক্ষমার যোগ্য
+
+      2
+      00:00:06,000 --> 00:00:10,000
+      प्रौद्योगिकी, विद्या, कृष्ण, उज्ज्वल, क्षमा
+    """.trimIndent()
+
+    val result = SubtitleParser.parseText(srt, "conjuncts.srt")
+    assertEquals(2, result.entries.size)
+    assertEquals("বিজ্ঞান, প্রযুক্তি, সৃষ্টি, কৃষ্টি, স্বচ্ছ, কৃষ্ণ, ক্ষমার যোগ্য", result.entries[0].text)
+    assertEquals("प्रौद्योगिकी, विद्या, कृष्ण, उज्ज्वल, क्षमा", result.entries[1].text)
+  }
 
   @Test
   fun testSrtWithWhitespaceOnlyBlankLines() {
@@ -67,7 +149,7 @@ class SubtitleParserTest {
   @Test
   fun testBengaliAndHindiTextRoundTrip() {
     val originalText1 = "বাংলা সাবটাইটেল সম্পাদন ও সিঙ্ক — বিজ্ঞান ও প্রযুক্তি"
-    val originalText2 = "नमस्ते दुनिया! हिंदी उपशीर्षक — प्रौद्योगिकी ও विद्या"
+    val originalText2 = "नमस्ते दुनिया! हिंदी उपशीर्षक — प्रौद्योगिकी और विद्या"
 
     val srt = """
       1

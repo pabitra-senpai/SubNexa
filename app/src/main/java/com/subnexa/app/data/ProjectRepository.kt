@@ -88,12 +88,22 @@ class ProjectRepository(private val context: Context) {
           StandardCopyOption.ATOMIC_MOVE,
           StandardCopyOption.REPLACE_EXISTING
         )
-      } catch (moveEx: Exception) {
-        if (targetFile.exists()) {
-          targetFile.delete()
-        }
-        if (!tempFile.renameTo(targetFile)) {
-          Log.e(TAG, "Fallback rename of ${tempFile.name} to ${targetFile.name} failed", moveEx)
+      } catch (_: Exception) {
+        // Fallback: first retry Files.move(temp, target, REPLACE_EXISTING) without ATOMIC_MOVE
+        try {
+          Files.move(
+            tempFile.toPath(),
+            targetFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+          )
+        } catch (_: Exception) {
+          // Never delete the target file before the replacement succeeds.
+          try {
+            tempFile.copyTo(targetFile, overwrite = true)
+            tempFile.delete()
+          } catch (copyEx: Exception) {
+            Log.e(TAG, "Fallback copy of ${tempFile.name} to ${targetFile.name} failed", copyEx)
+          }
         }
       }
     } catch (e: Exception) {
@@ -122,66 +132,96 @@ class ProjectRepository(private val context: Context) {
     }
   }
 
-  suspend fun getProject(projectId: String): Project? = withContext(Dispatchers.IO) {
-    try {
-      val file = File(projectsDir, "$projectId.json")
-      if (!file.exists()) return@withContext null
+  private fun parseProjectJson(jsonStr: String): Project {
+    val root = JSONObject(jsonStr)
+    val id = root.getString("id")
+    val videoUri = root.getString("videoUri")
+    val videoName = root.getString("videoName")
+    val subtitleUri = if (root.has("subtitleUri") && !root.isNull("subtitleUri")) root.getString("subtitleUri") else null
+    val subtitleName = if (root.has("subtitleName") && !root.isNull("subtitleName")) root.getString("subtitleName") else null
+    val lastPlaybackPositionMs = root.optLong("lastPlaybackPositionMs", 0L)
+    val lastSelectedEntryId = if (root.has("lastSelectedEntryId") && !root.isNull("lastSelectedEntryId")) root.getLong("lastSelectedEntryId") else null
+    val lastEditedTimeMs = root.optLong("lastEditedTimeMs", System.currentTimeMillis())
 
-      val root = JSONObject(file.readText())
-      val id = root.getString("id")
-      val videoUri = root.getString("videoUri")
-      val videoName = root.getString("videoName")
-      val subtitleUri = if (root.has("subtitleUri") && !root.isNull("subtitleUri")) root.getString("subtitleUri") else null
-      val subtitleName = if (root.has("subtitleName") && !root.isNull("subtitleName")) root.getString("subtitleName") else null
-      val lastPlaybackPositionMs = root.optLong("lastPlaybackPositionMs", 0L)
-      val lastSelectedEntryId = if (root.has("lastSelectedEntryId") && !root.isNull("lastSelectedEntryId")) root.getLong("lastSelectedEntryId") else null
-      val lastEditedTimeMs = root.optLong("lastEditedTimeMs", System.currentTimeMillis())
-
-      // Appearance
-      val appObj = root.optJSONObject("appearance")
-      val appearance = if (appObj != null) {
-        SubtitleAppearance(
-          fontSizeSp = appObj.optDouble("fontSizeSp", 16.0).toFloat(),
-          textColorHex = appObj.optLong("textColorHex", 0xFFFFFFFFL),
-          bgMode = try { BgMode.valueOf(appObj.optString("bgMode", "DIM")) } catch (_: Exception) { BgMode.DIM },
-          position = try { SubtitlePosition.valueOf(appObj.optString("position", "BOTTOM")) } catch (_: Exception) { SubtitlePosition.BOTTOM },
-          fontId = appObj.optString("fontId", "hind_siliguri")
-        )
-      } else {
-        SubtitleAppearance()
-      }
-
-      // Entries
-      val entriesArray = root.optJSONArray("entries") ?: JSONArray()
-      val entries = mutableListOf<SubtitleEntry>()
-      for (i in 0 until entriesArray.length()) {
-        val entryObj = entriesArray.getJSONObject(i)
-        entries.add(
-          SubtitleEntry(
-            id = entryObj.getLong("id"),
-            startMs = entryObj.getLong("startMs"),
-            endMs = entryObj.getLong("endMs"),
-            text = entryObj.getString("text")
-          )
-        )
-      }
-
-      Project(
-        id = id,
-        videoUri = videoUri,
-        videoName = videoName,
-        subtitleUri = subtitleUri,
-        subtitleName = subtitleName,
-        entries = entries.sortedBy { it.startMs },
-        lastPlaybackPositionMs = lastPlaybackPositionMs,
-        lastSelectedEntryId = lastSelectedEntryId,
-        appearance = appearance,
-        lastEditedTimeMs = lastEditedTimeMs
+    // Appearance
+    val appObj = root.optJSONObject("appearance")
+    val appearance = if (appObj != null) {
+      SubtitleAppearance(
+        fontSizeSp = appObj.optDouble("fontSizeSp", 16.0).toFloat(),
+        textColorHex = appObj.optLong("textColorHex", 0xFFFFFFFFL),
+        bgMode = try { BgMode.valueOf(appObj.optString("bgMode", "DIM")) } catch (_: Exception) { BgMode.DIM },
+        position = try { SubtitlePosition.valueOf(appObj.optString("position", "BOTTOM")) } catch (_: Exception) { SubtitlePosition.BOTTOM },
+        fontId = appObj.optString("fontId", "hind_siliguri")
       )
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to load project $projectId", e)
-      null
+    } else {
+      SubtitleAppearance()
     }
+
+    // Entries
+    val entriesArray = root.optJSONArray("entries") ?: JSONArray()
+    val entries = mutableListOf<SubtitleEntry>()
+    for (i in 0 until entriesArray.length()) {
+      val entryObj = entriesArray.getJSONObject(i)
+      entries.add(
+        SubtitleEntry(
+          id = entryObj.getLong("id"),
+          startMs = entryObj.getLong("startMs"),
+          endMs = entryObj.getLong("endMs"),
+          text = entryObj.getString("text")
+        )
+      )
+    }
+
+    return Project(
+      id = id,
+      videoUri = videoUri,
+      videoName = videoName,
+      subtitleUri = subtitleUri,
+      subtitleName = subtitleName,
+      entries = entries.sortedBy { it.startMs },
+      lastPlaybackPositionMs = lastPlaybackPositionMs,
+      lastSelectedEntryId = lastSelectedEntryId,
+      appearance = appearance,
+      lastEditedTimeMs = lastEditedTimeMs
+    )
+  }
+
+  suspend fun getProject(projectId: String): Project? = withContext(Dispatchers.IO) {
+    val file = File(projectsDir, "$projectId.json")
+    val tempFile = File(projectsDir, "$projectId.json.tmp")
+
+    // Try reading primary file first
+    if (file.exists()) {
+      try {
+        return@withContext parseProjectJson(file.readText())
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to parse primary project file for $projectId, checking tmp file", e)
+      }
+    }
+
+    // If <id>.json is missing or fails to parse, but <id>.json.tmp exists and parses, use it and rename it into place
+    if (tempFile.exists()) {
+      try {
+        val project = parseProjectJson(tempFile.readText())
+        try {
+          Files.move(
+            tempFile.toPath(),
+            file.toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+          )
+        } catch (_: Exception) {
+          if (!tempFile.renameTo(file)) {
+            tempFile.copyTo(file, overwrite = true)
+            tempFile.delete()
+          }
+        }
+        return@withContext project
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to parse tmp project file for $projectId", e)
+      }
+    }
+
+    null
   }
 
   suspend fun saveProject(project: Project) = withContext(Dispatchers.IO) {
