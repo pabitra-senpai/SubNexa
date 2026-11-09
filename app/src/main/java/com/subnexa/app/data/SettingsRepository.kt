@@ -19,6 +19,17 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 class SettingsRepository(private val context: Context) {
 
+  companion object {
+    @Volatile
+    private var instance: SettingsRepository? = null
+
+    fun getInstance(context: Context): SettingsRepository {
+      return instance ?: synchronized(this) {
+        instance ?: SettingsRepository(context.applicationContext).also { instance = it }
+      }
+    }
+  }
+
   private object PrefKeys {
     val FONT_SIZE = floatPreferencesKey("pref_font_size")
     val TEXT_COLOR = longPreferencesKey("pref_text_color")

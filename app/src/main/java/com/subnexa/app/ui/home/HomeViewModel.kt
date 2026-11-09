@@ -1,25 +1,21 @@
 package com.subnexa.app.ui.home
 
 import android.app.Application
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.subnexa.app.data.ProjectRepository
 import com.subnexa.app.data.SettingsRepository
 import com.subnexa.app.domain.model.Project
 import com.subnexa.app.domain.model.ProjectSummary
-import com.subnexa.app.domain.model.SubtitleAppearance
 import com.subnexa.app.domain.parser.SubtitleParser
+import com.subnexa.app.domain.util.FileUtils
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -33,8 +29,8 @@ sealed interface HomeEvent {
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
-  val projectRepository = ProjectRepository(application)
-  val settingsRepository = SettingsRepository(application)
+  val projectRepository = ProjectRepository.getInstance(application)
+  val settingsRepository = SettingsRepository.getInstance(application)
 
   val summaries: StateFlow<List<ProjectSummary>> = projectRepository.summariesFlow
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -45,22 +41,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
   private var pendingSubtitleUri: Uri? = null
   private var pendingSubtitleName: String? = null
   private var lastDeletedProject: Project? = null
-
-  private fun getFileName(context: Context, uri: Uri): String {
-    var name = "Video"
-    try {
-      context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (nameIndex != -1 && cursor.moveToFirst()) {
-          name = cursor.getString(nameIndex) ?: name
-        }
-      }
-    } catch (_: Exception) {
-      // Fallback to last path segment
-      name = uri.lastPathSegment ?: "Video"
-    }
-    return name
-  }
 
   fun onVideoSelected(videoUri: Uri) {
     viewModelScope.launch {
@@ -74,12 +54,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Some providers do not support persistable URIs, continue anyway
       }
 
-      val videoName = getFileName(context, videoUri)
+      val videoName = FileUtils.getFileName(context, videoUri, "Video")
       val defaultAppearance = settingsRepository.defaultAppearanceFlow.first()
 
       val (entries, subUri, subName) = if (pendingSubtitleUri != null) {
         val sUri = pendingSubtitleUri!!
-        val sName = pendingSubtitleName ?: getFileName(context, sUri)
+        val sName = pendingSubtitleName ?: FileUtils.getFileName(context, sUri, "Subtitles")
         pendingSubtitleUri = null
         pendingSubtitleName = null
 
@@ -124,7 +104,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Ignore
       }
 
-      val subtitleName = getFileName(context, subtitleUri)
+      val subtitleName = FileUtils.getFileName(context, subtitleUri, "Subtitles")
       pendingSubtitleUri = subtitleUri
       pendingSubtitleName = subtitleName
 

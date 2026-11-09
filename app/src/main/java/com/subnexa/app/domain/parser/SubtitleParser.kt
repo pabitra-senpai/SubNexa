@@ -74,58 +74,63 @@ object SubtitleParser {
     var skipped = 0
     var nextId = 1L
 
-    // Split into blocks separated by one or more blank lines
-    val rawBlocks = content.split(Regex("\n{2,}"))
+    // Split into blocks separated by one or more blank/whitespace lines
+    val rawBlocks = content.split(Regex("(?:\\n[ \\t]*)+\\n"))
 
     for (block in rawBlocks) {
       val lines = block.lines().map { it.trim() }.filter { it.isNotEmpty() }
       if (lines.isEmpty()) continue
 
-      var timeLineIndex = -1
-      for (i in lines.indices) {
-        if (lines[i].contains("-->")) {
-          timeLineIndex = i
-          break
+      val timeLineIndices = lines.indices.filter { lines[it].contains("-->") }
+
+      if (timeLineIndices.isEmpty()) {
+        skipped++
+        continue
+      }
+
+      for (idx in timeLineIndices.indices) {
+        val tIndex = timeLineIndices[idx]
+        val timeLine = lines[tIndex]
+        val timeParts = timeLine.split("-->")
+        if (timeParts.size != 2) {
+          skipped++
+          continue
         }
-      }
 
-      if (timeLineIndex == -1) {
-        skipped++
-        continue
-      }
+        val startMs = TimeUtils.parseTimestamp(timeParts[0].trim())
+        // In SRT sometimes settings or extra tokens follow end timestamp
+        val endToken = timeParts[1].trim().split(Regex("\\s+"))[0]
+        val endMs = TimeUtils.parseTimestamp(endToken)
 
-      val timeLine = lines[timeLineIndex]
-      val timeParts = timeLine.split("-->")
-      if (timeParts.size != 2) {
-        skipped++
-        continue
-      }
+        if (startMs == null || endMs == null || endMs <= startMs || startMs < 0) {
+          skipped++
+          continue
+        }
 
-      val startMs = TimeUtils.parseTimestamp(timeParts[0].trim())
-      // In SRT sometimes settings or extra tokens follow end timestamp
-      val endToken = timeParts[1].trim().split(Regex("\\s+"))[0]
-      val endMs = TimeUtils.parseTimestamp(endToken)
+        val nextTIndex = if (idx + 1 < timeLineIndices.size) timeLineIndices[idx + 1] else lines.size
+        val rawTextLines = lines.subList(tIndex + 1, nextTIndex)
 
-      if (startMs == null || endMs == null || endMs <= startMs || startMs < 0) {
-        skipped++
-        continue
-      }
+        val textLines = if (idx + 1 < timeLineIndices.size && rawTextLines.isNotEmpty() && rawTextLines.last().toLongOrNull() != null) {
+          rawTextLines.dropLast(1)
+        } else {
+          rawTextLines
+        }
 
-      val textLines = lines.drop(timeLineIndex + 1)
-      val text = textLines.joinToString("\n").trim()
-      if (text.isEmpty()) {
-        skipped++
-        continue
-      }
+        val text = textLines.joinToString("\n").trim()
+        if (text.isEmpty()) {
+          skipped++
+          continue
+        }
 
-      entries.add(
-        SubtitleEntry(
-          id = nextId++,
-          startMs = startMs,
-          endMs = endMs,
-          text = text
+        entries.add(
+          SubtitleEntry(
+            id = nextId++,
+            startMs = startMs,
+            endMs = endMs,
+            text = text
+          )
         )
-      )
+      }
     }
 
     entries.sortBy { it.startMs }
@@ -143,18 +148,21 @@ object SubtitleParser {
     val lines = content.lines()
     var i = 0
 
-    // Skip WEBVTT header and any header metadata
-    while (i < lines.size) {
-      val line = lines[i].trim()
-      if (line.startsWith("WEBVTT")) {
-        i++
-        // Skip subsequent header lines until blank line
-        while (i < lines.size && lines[i].trim().isNotEmpty()) {
+    // Skip WEBVTT header and any header metadata if present
+    val hasWebvttHeader = lines.any { it.trim().startsWith("WEBVTT") }
+    if (hasWebvttHeader) {
+      while (i < lines.size) {
+        val line = lines[i].trim()
+        if (line.startsWith("WEBVTT")) {
           i++
+          // Skip subsequent header lines until blank line
+          while (i < lines.size && lines[i].trim().isNotEmpty()) {
+            i++
+          }
+          break
         }
-        break
+        i++
       }
-      i++
     }
 
     while (i < lines.size) {
@@ -231,11 +239,11 @@ object SubtitleParser {
   }
 
   /**
-   * Fast binary search to find active subtitle entry for the current video playhead.
-   * Assumes entries are sorted by startMs.
+   * Fast binary search to find active subtitle index for the current video playhead.
+   * Assumes entries are sorted by startMs. Returns -1 if no active entry.
    */
-  fun findActiveEntry(entries: List<SubtitleEntry>, positionMs: Long): SubtitleEntry? {
-    if (entries.isEmpty()) return null
+  fun findActiveIndex(entries: List<SubtitleEntry>, positionMs: Long): Int {
+    if (entries.isEmpty()) return -1
 
     var low = 0
     var high = entries.size - 1
@@ -247,11 +255,20 @@ object SubtitleParser {
       when {
         positionMs < entry.startMs -> high = mid - 1
         positionMs > entry.endMs -> low = mid + 1
-        else -> return entry
+        else -> return mid
       }
     }
 
     // Secondary check for rare slight overlap or edge condition
-    return entries.firstOrNull { it.startMs <= positionMs && positionMs <= it.endMs }
+    return entries.indexOfFirst { it.startMs <= positionMs && positionMs <= it.endMs }
+  }
+
+  /**
+   * Fast binary search to find active subtitle entry for the current video playhead.
+   * Assumes entries are sorted by startMs.
+   */
+  fun findActiveEntry(entries: List<SubtitleEntry>, positionMs: Long): SubtitleEntry? {
+    val index = findActiveIndex(entries, positionMs)
+    return if (index != -1) entries[index] else null
   }
 }

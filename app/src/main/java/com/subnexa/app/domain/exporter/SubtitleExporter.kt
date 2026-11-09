@@ -11,15 +11,32 @@ import java.nio.charset.StandardCharsets
 
 object SubtitleExporter {
 
+  /**
+   * Normalizes subtitle text by converting \r\n to \n, trimming lines,
+   * collapsing any run of blank lines into a single newline, and stripping leading/trailing whitespace.
+   */
+  fun normalizeText(rawText: String): String {
+    return rawText
+      .replace("\r\n", "\n")
+      .replace('\r', '\n')
+      .lines()
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .joinToString("\n")
+  }
+
   fun generateSrtContent(entries: List<SubtitleEntry>): String {
     val sorted = entries.sortedBy { it.startMs }
     val sb = StringBuilder()
-    for ((index, entry) in sorted.withIndex()) {
-      sb.append(index + 1).append("\n")
+    var index = 1
+    for (entry in sorted) {
+      val text = normalizeText(entry.text)
+      if (text.isEmpty()) continue
+      sb.append(index++).append("\n")
       val start = TimeUtils.formatTimestamp(entry.startMs, ',')
       val end = TimeUtils.formatTimestamp(entry.endMs, ',')
       sb.append(start).append(" --> ").append(end).append("\n")
-      sb.append(entry.text.trim()).append("\n\n")
+      sb.append(text).append("\n\n")
     }
     return sb.toString()
   }
@@ -29,10 +46,12 @@ object SubtitleExporter {
     val sb = StringBuilder()
     sb.append("WEBVTT\n\n")
     for (entry in sorted) {
+      val text = normalizeText(entry.text)
+      if (text.isEmpty()) continue
       val start = TimeUtils.formatTimestamp(entry.startMs, '.')
       val end = TimeUtils.formatTimestamp(entry.endMs, '.')
       sb.append(start).append(" --> ").append(end).append("\n")
-      sb.append(entry.text.trim()).append("\n\n")
+      sb.append(text).append("\n\n")
     }
     return sb.toString()
   }

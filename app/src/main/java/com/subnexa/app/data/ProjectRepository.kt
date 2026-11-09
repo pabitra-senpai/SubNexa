@@ -1,6 +1,7 @@
 package com.subnexa.app.data
 
 import android.content.Context
+import android.util.Log
 import com.subnexa.app.domain.model.BgMode
 import com.subnexa.app.domain.model.Project
 import com.subnexa.app.domain.model.ProjectSummary
@@ -15,8 +16,24 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class ProjectRepository(private val context: Context) {
+
+  companion object {
+    private const val TAG = "ProjectRepository"
+
+    @Volatile
+    private var instance: ProjectRepository? = null
+
+    fun getInstance(context: Context): ProjectRepository {
+      return instance ?: synchronized(this) {
+        instance ?: ProjectRepository(context.applicationContext).also { instance = it }
+      }
+    }
+  }
 
   private val projectsDir = File(context.filesDir, "projects").apply { mkdirs() }
   private val indexFile = File(projectsDir, "index.json")
@@ -50,8 +67,40 @@ class ProjectRepository(private val context: Context) {
       }
       // Sort by last edited descending
       _summariesFlow.value = list.sortedByDescending { it.lastEditedTimeMs }
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to load summaries from index.json", e)
       _summariesFlow.value = emptyList()
+    }
+  }
+
+  private fun atomicWrite(targetFile: File, content: String) {
+    val tempFile = File(targetFile.parentFile, "${targetFile.name}.tmp")
+    try {
+      FileOutputStream(tempFile).use { fos ->
+        fos.write(content.toByteArray(Charsets.UTF_8))
+        fos.flush()
+        fos.fd.sync()
+      }
+      try {
+        Files.move(
+          tempFile.toPath(),
+          targetFile.toPath(),
+          StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING
+        )
+      } catch (moveEx: Exception) {
+        if (targetFile.exists()) {
+          targetFile.delete()
+        }
+        if (!tempFile.renameTo(targetFile)) {
+          Log.e(TAG, "Fallback rename of ${tempFile.name} to ${targetFile.name} failed", moveEx)
+        }
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed atomic write for ${targetFile.name}", e)
+      if (tempFile.exists()) {
+        tempFile.delete()
+      }
     }
   }
 
@@ -67,9 +116,9 @@ class ProjectRepository(private val context: Context) {
         }
         jsonArray.put(obj)
       }
-      indexFile.writeText(jsonArray.toString(2))
-    } catch (_: Exception) {
-      // Ignore write errors to index
+      atomicWrite(indexFile, jsonArray.toString())
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to save summaries to index.json", e)
     }
   }
 
@@ -129,7 +178,8 @@ class ProjectRepository(private val context: Context) {
         appearance = appearance,
         lastEditedTimeMs = lastEditedTimeMs
       )
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to load project $projectId", e)
       null
     }
   }
@@ -171,7 +221,7 @@ class ProjectRepository(private val context: Context) {
         put("entries", entriesArray)
       }
 
-      file.writeText(root.toString(2))
+      atomicWrite(file, root.toString())
 
       // Update summaries
       val currentSummaries = _summariesFlow.value.filter { it.id != project.id }.toMutableList()
@@ -187,8 +237,8 @@ class ProjectRepository(private val context: Context) {
       val sorted = currentSummaries.sortedByDescending { it.lastEditedTimeMs }
       _summariesFlow.value = sorted
       saveSummaries(sorted)
-    } catch (_: Exception) {
-      // Save failure handled gracefully
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to save project ${project.id}", e)
     }
   }
 
@@ -202,8 +252,8 @@ class ProjectRepository(private val context: Context) {
       val updated = _summariesFlow.value.filter { it.id != projectId }
       _summariesFlow.value = updated
       saveSummaries(updated)
-    } catch (_: Exception) {
-      // Ignore delete errors
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to delete project $projectId", e)
     }
     project
   }

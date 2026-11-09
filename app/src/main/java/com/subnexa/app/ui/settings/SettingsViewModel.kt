@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-  private val settingsRepository = SettingsRepository(application)
+  private val settingsRepository = SettingsRepository.getInstance(application)
 
   val defaultAppearance: StateFlow<SubtitleAppearance> = settingsRepository.defaultAppearanceFlow
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SubtitleAppearance())

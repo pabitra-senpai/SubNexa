@@ -1,7 +1,6 @@
 package com.subnexa.app.ui.editor
 
 import android.app.Application
-import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,7 +17,7 @@ import com.subnexa.app.domain.model.Project
 import com.subnexa.app.domain.model.SubtitleAppearance
 import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.parser.SubtitleParser
-import com.subnexa.app.domain.parser.TimeUtils
+import com.subnexa.app.domain.util.FileUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -65,8 +64,8 @@ data class EditorUiState(
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
 
-  private val projectRepository = ProjectRepository(application)
-  private val settingsRepository = SettingsRepository(application)
+  private val projectRepository = ProjectRepository.getInstance(application)
+  private val settingsRepository = SettingsRepository.getInstance(application)
 
   private val _uiState = MutableStateFlow(EditorUiState())
   val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
@@ -80,7 +79,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private var positionPollingJob: Job? = null
   private var autosaveJob: Job? = null
   private val idGenerator = AtomicLong(1000L)
-  private var lastDeletedEntry: Pair<SubtitleEntry, Int>? = null
+  private val deletedEntriesStack = ArrayDeque<SubtitleEntry>()
 
   private val speedCycle = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
@@ -171,9 +170,27 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val player = exoPlayer ?: break
         val pos = player.currentPosition
         val dur = maxOf(0L, player.duration)
-        _uiState.update { it.copy(currentPositionMs = pos, durationMs = dur) }
-        updateActiveEntry(pos)
-        delay(40L)
+        val entries = _uiState.value.project?.entries
+        val activeIndex = if (entries != null) SubtitleParser.findActiveIndex(entries, pos) else -1
+        val active = if (entries != null && activeIndex != -1) entries[activeIndex] else null
+
+        _uiState.update { current ->
+          if (current.currentPositionMs == pos &&
+            current.durationMs == dur &&
+            current.activeEntry == active &&
+            current.activeIndex == activeIndex
+          ) {
+            current
+          } else {
+            current.copy(
+              currentPositionMs = pos,
+              durationMs = dur,
+              activeEntry = active,
+              activeIndex = activeIndex
+            )
+          }
+        }
+        delay(50L)
       }
     }
   }
@@ -182,15 +199,27 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     positionPollingJob?.cancel()
     positionPollingJob = null
     val pos = exoPlayer?.currentPosition ?: 0L
-    _uiState.update { it.copy(currentPositionMs = pos) }
     updateActiveEntry(pos)
   }
 
   private fun updateActiveEntry(positionMs: Long) {
     val entries = _uiState.value.project?.entries ?: return
-    val active = SubtitleParser.findActiveEntry(entries, positionMs)
-    val index = if (active != null) entries.indexOf(active) else -1
-    _uiState.update { it.copy(activeEntry = active, activeIndex = index) }
+    val index = SubtitleParser.findActiveIndex(entries, positionMs)
+    val active = if (index != -1) entries[index] else null
+    _uiState.update { current ->
+      if (current.currentPositionMs == positionMs &&
+        current.activeEntry == active &&
+        current.activeIndex == index
+      ) {
+        current
+      } else {
+        current.copy(
+          currentPositionMs = positionMs,
+          activeEntry = active,
+          activeIndex = index
+        )
+      }
+    }
   }
 
   fun togglePlayPause() {
@@ -209,7 +238,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   fun seekTo(positionMs: Long) {
     val clamped = positionMs.coerceIn(0L, _uiState.value.durationMs.coerceAtLeast(0L))
     exoPlayer?.seekTo(clamped)
-    _uiState.update { it.copy(currentPositionMs = clamped) }
     updateActiveEntry(clamped)
     triggerDebouncedAutosave()
   }
@@ -237,12 +265,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   }
 
   fun addSubtitle(startMs: Long, endMs: Long, text: String) {
+    val normalizedText = SubtitleExporter.normalizeText(text)
+    if (endMs <= startMs || normalizedText.isEmpty()) {
+      viewModelScope.launch {
+        _events.emit(EditorEvent.ShowSnackbar("Invalid timing or empty text"))
+      }
+      return
+    }
+
     val project = _uiState.value.project ?: return
     val newEntry = SubtitleEntry(
       id = idGenerator.getAndIncrement(),
       startMs = startMs,
       endMs = endMs,
-      text = text.trim()
+      text = normalizedText
     )
     val updatedEntries = (project.entries + newEntry).sortedBy { it.startMs }
     val updatedProject = project.copy(
@@ -264,10 +300,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   }
 
   fun updateSubtitle(id: Long, startMs: Long, endMs: Long, text: String) {
+    val normalizedText = SubtitleExporter.normalizeText(text)
+    if (endMs <= startMs || normalizedText.isEmpty()) {
+      viewModelScope.launch {
+        _events.emit(EditorEvent.ShowSnackbar("Invalid timing or empty text"))
+      }
+      return
+    }
+
     val project = _uiState.value.project ?: return
     val updatedEntries = project.entries.map { entry ->
       if (entry.id == id) {
-        entry.copy(startMs = startMs, endMs = endMs, text = text.trim())
+        entry.copy(startMs = startMs, endMs = endMs, text = normalizedText)
       } else entry
     }.sortedBy { it.startMs }
 
@@ -291,13 +335,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   fun deleteSubtitle(entry: SubtitleEntry) {
     val project = _uiState.value.project ?: return
-    val originalIndex = project.entries.indexOf(entry)
     val updatedEntries = project.entries.filter { it.id != entry.id }
     val updatedProject = project.copy(
       entries = updatedEntries,
       lastEditedTimeMs = System.currentTimeMillis()
     )
-    lastDeletedEntry = entry to originalIndex
+    deletedEntriesStack.addLast(entry)
     _uiState.update { it.copy(project = updatedProject) }
     updateActiveEntry(_uiState.value.currentPositionMs)
     triggerImmediateSave(updatedProject)
@@ -314,14 +357,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   }
 
   private fun undoDeleteSubtitle() {
-    val (entryToRestore, _) = lastDeletedEntry ?: return
+    if (deletedEntriesStack.isEmpty()) return
+    val entryToRestore = deletedEntriesStack.removeLast()
     val project = _uiState.value.project ?: return
     val updatedEntries = (project.entries + entryToRestore).sortedBy { it.startMs }
     val updatedProject = project.copy(
       entries = updatedEntries,
       lastEditedTimeMs = System.currentTimeMillis()
     )
-    lastDeletedEntry = null
     _uiState.update { it.copy(project = updatedProject) }
     updateActiveEntry(_uiState.value.currentPositionMs)
     triggerImmediateSave(updatedProject)
@@ -365,9 +408,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val project = _uiState.value.project ?: return
-    val words = entry.text.split(" ")
+    val words = entry.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
     val midWordIndex = (words.size / 2).coerceAtLeast(1)
-    val firstText = words.take(midWordIndex).joinToString(" ").ifEmpty { entry.text }
+    val firstText = words.take(midWordIndex).joinToString(" ").ifEmpty { entry.text.trim() }
     val secondText = words.drop(midWordIndex).joinToString(" ").ifEmpty { "..." }
 
     val firstHalf = entry.copy(endMs = playhead, text = firstText)
@@ -469,9 +512,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         )
       } catch (_: Exception) {}
 
+      val subtitleFileName = FileUtils.getFileName(context, subtitleUri, "Subtitles")
+
       val parseResult = try {
         context.contentResolver.openInputStream(subtitleUri)?.use { input ->
-          SubtitleParser.parse(input)
+          SubtitleParser.parse(input, subtitleFileName)
         }
       } catch (_: Exception) {
         null
@@ -491,7 +536,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       val updated = project.copy(
         entries = newEntries,
         subtitleUri = subtitleUri.toString(),
-        subtitleName = subtitleUri.lastPathSegment,
+        subtitleName = subtitleFileName,
         lastEditedTimeMs = System.currentTimeMillis()
       )
       _uiState.update { it.copy(project = updated) }
