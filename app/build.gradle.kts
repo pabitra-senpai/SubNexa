@@ -11,8 +11,9 @@ android {
     applicationId = "com.subnexa.app"
     minSdk = 26
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0.0"
+    val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+    versionCode = buildNumber
+    versionName = "1.0.$buildNumber"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
