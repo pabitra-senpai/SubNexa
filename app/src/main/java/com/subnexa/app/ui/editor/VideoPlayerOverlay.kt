@@ -3,9 +3,6 @@ package com.subnexa.app.ui.editor
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.Tune
@@ -37,10 +35,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,7 +69,6 @@ import com.subnexa.app.ui.theme.SubtitleFontFamily
 import com.subnexa.app.ui.theme.Surface
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(UnstableApi::class)
@@ -99,20 +94,9 @@ fun VideoPlayerSection(
     FontManager.resolveFontFamily(context, appearance.fontId)
   }
 
+  // Controls stay visible (no auto-hide, no fade) until the user taps the close (X) button.
+  // While they are hidden, tapping the video brings them back.
   var areControlsVisible by remember { mutableStateOf(true) }
-  var controlsTimerTrigger by remember { mutableIntStateOf(0) }
-
-  fun resetControlsTimer() {
-    areControlsVisible = true
-    controlsTimerTrigger++
-  }
-
-  LaunchedEffect(areControlsVisible, controlsTimerTrigger) {
-    if (areControlsVisible) {
-      delay(3000L)
-      areControlsVisible = false
-    }
-  }
 
   Box(
     modifier = modifier
@@ -121,10 +105,8 @@ fun VideoPlayerSection(
         interactionSource = remember { MutableInteractionSource() },
         indication = null
       ) {
-        if (areControlsVisible) {
-          areControlsVisible = false
-        } else {
-          resetControlsTimer()
+        if (!areControlsVisible) {
+          areControlsVisible = true
         }
       }
   ) {
@@ -193,15 +175,37 @@ fun VideoPlayerSection(
       }
     }
 
+    // Top Left: close (X) button - hides all controls until the video is tapped again
+    if (areControlsVisible) {
+      Box(
+        modifier = Modifier
+          .align(Alignment.TopStart)
+          .padding(8.dp)
+          .size(36.dp)
+          .clip(CircleShape)
+          .background(Color(0x88000000)),
+        contentAlignment = Alignment.Center
+      ) {
+        IconButton(
+          onClick = { areControlsVisible = false },
+          modifier = Modifier.size(36.dp).testTag("close_controls_button")
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.Close,
+            contentDescription = "Hide controls",
+            tint = TextPrimary,
+            modifier = Modifier.size(18.dp)
+          )
+        }
+      }
+    }
+
     // Top Right Controls Overlay
-    AnimatedVisibility(
-      visible = areControlsVisible,
-      enter = fadeIn(),
-      exit = fadeOut(),
-      modifier = Modifier.align(Alignment.TopEnd)
-    ) {
+    if (areControlsVisible) {
       Row(
-        modifier = Modifier.padding(8.dp),
+        modifier = Modifier
+          .align(Alignment.TopEnd)
+          .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
       ) {
         Box(
@@ -212,10 +216,7 @@ fun VideoPlayerSection(
           contentAlignment = Alignment.Center
         ) {
           IconButton(
-            onClick = {
-              resetControlsTimer()
-              onOpenAppearance()
-            },
+            onClick = onOpenAppearance,
             modifier = Modifier.size(36.dp).testTag("appearance_button")
           ) {
             Icon(
@@ -235,10 +236,7 @@ fun VideoPlayerSection(
           contentAlignment = Alignment.Center
         ) {
           IconButton(
-            onClick = {
-              resetControlsTimer()
-              onToggleFullscreen()
-            },
+            onClick = onToggleFullscreen,
             modifier = Modifier.size(36.dp).testTag("fullscreen_button")
           ) {
             Icon(
@@ -253,12 +251,7 @@ fun VideoPlayerSection(
     }
 
     // Bottom Controls Bar Overlay - only this composable collects playbackPositionFlow
-    AnimatedVisibility(
-      visible = areControlsVisible,
-      enter = fadeIn(),
-      exit = fadeOut(),
-      modifier = Modifier.align(Alignment.BottomCenter)
-    ) {
+    if (areControlsVisible) {
       VideoPlayerControlsBottomBar(
         playbackPositionFlow = playbackPositionFlow,
         durationMs = durationMs,
@@ -267,7 +260,7 @@ fun VideoPlayerSection(
         onSeekTo = onSeekTo,
         onTogglePlayPause = onTogglePlayPause,
         onCycleSpeed = onCycleSpeed,
-        onInteraction = { resetControlsTimer() }
+        modifier = Modifier.align(Alignment.BottomCenter)
       )
     }
   }
@@ -282,7 +275,6 @@ private fun VideoPlayerControlsBottomBar(
   onSeekTo: (Long) -> Unit,
   onTogglePlayPause: () -> Unit,
   onCycleSpeed: () -> Unit,
-  onInteraction: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val currentPositionMs by playbackPositionFlow.collectAsState()
@@ -291,12 +283,6 @@ private fun VideoPlayerControlsBottomBar(
     modifier = modifier
       .fillMaxWidth()
       .background(Color(0xAA09090B))
-      .clickable(
-        interactionSource = remember { MutableInteractionSource() },
-        indication = null
-      ) {
-        onInteraction()
-      }
       .padding(horizontal = 12.dp, vertical = 4.dp)
   ) {
     // Seekbar Scrubber
@@ -307,7 +293,6 @@ private fun VideoPlayerControlsBottomBar(
     Slider(
       value = sliderValue,
       onValueChange = { frac ->
-        onInteraction()
         if (durationMs > 0) {
           onSeekTo((frac * durationMs).toLong())
         }
@@ -333,10 +318,7 @@ private fun VideoPlayerControlsBottomBar(
     ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(
-          onClick = {
-            onInteraction()
-            onTogglePlayPause()
-          },
+          onClick = onTogglePlayPause,
           modifier = Modifier.size(36.dp).testTag("play_pause_button")
         ) {
           Icon(
@@ -364,10 +346,7 @@ private fun VideoPlayerControlsBottomBar(
           .clip(RoundedCornerShape(6.dp))
           .background(Surface)
           .border(0.5.dp, Border, RoundedCornerShape(6.dp))
-          .clickable {
-            onInteraction()
-            onCycleSpeed()
-          }
+          .clickable(onClick = onCycleSpeed)
           .padding(horizontal = 8.dp, vertical = 4.dp)
           .testTag("speed_chip")
       ) {
