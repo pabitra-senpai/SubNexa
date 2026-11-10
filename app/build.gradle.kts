@@ -11,39 +11,48 @@ android {
     applicationId = "com.subnexa.app"
     minSdk = 26
     targetSdk = 36
-    val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-    versionCode = buildNumber
-    versionName = "1.0.$buildNumber"
+    // Version is injected by CI (VERSION_CODE / VERSION_NAME) so that
+    // versionCode always increases, even if the repo or workflow is recreated.
+    // Local builds fall back to 1 / "1.0.0-dev".
+    versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+    versionName = System.getenv("VERSION_NAME") ?: "1.0.0-dev"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  // Release signing is configured only when all inputs exist (CI secrets or a
+  // local keystore). Without them, the release build stays unsigned instead
+  // of silently falling back to a debug key.
+  val releaseKeystoreFile = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/release.jks")
+  val releaseStorePassword = System.getenv("STORE_PASSWORD")
+  val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+  val releaseKeyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+  val hasReleaseSigning = releaseKeystoreFile.exists() &&
+    !releaseStorePassword.isNullOrEmpty() &&
+    !releaseKeyPassword.isNullOrEmpty()
+
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    if (hasReleaseSigning) {
+      create("release") {
+        storeFile = releaseKeystoreFile
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
+      }
     }
   }
 
   buildTypes {
     release {
+      isMinifyEnabled = true
+      isShrinkResources = true
       isCrunchPngs = false
-      isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      if (hasReleaseSigning) {
+        signingConfig = signingConfigs.getByName("release")
+      }
     }
-    debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
-    }
+    // debug uses the standard auto-generated Android debug keystore.
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
