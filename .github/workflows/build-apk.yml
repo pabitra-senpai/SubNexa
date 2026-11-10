@@ -16,6 +16,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -24,43 +27,85 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.3.1'
 
-      - name: Ensure debug keystore exists
+      - name: Compute version
         run: |
-          if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+          # versionCode = minutes since epoch: always increases, independent of
+          # repo/workflow history, and fits in a 32-bit int until the year 6000+.
+          VERSION_CODE=$(( $(date +%s) / 60 ))
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
           else
-            echo "::error::debug.keystore.base64 missing in repo root"
-            exit 1
+            VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
           fi
+          echo "VERSION_CODE=${VERSION_CODE}" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
+          echo "Version: ${VERSION_NAME} (${VERSION_CODE})"
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 STORE_PASSWORD KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing GitHub secret $v. See README > Release signing."
+              exit 1
+            fi
+          done
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Build signed release APK
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Collect APK
         run: |
           mkdir -p dist
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK was produced"
+            exit 1
+          fi
           echo "Found: $APK"
           cp "$APK" dist/SubNexa.apk
+
+      - name: Verify APK signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs dist/SubNexa.apk | tee sign.txt
+          if grep -qi "Android Debug" sign.txt; then
+            echo "::error::APK is signed with a debug key"
+            exit 1
+          fi
 
       - name: Generate update manifest
         run: |
           TAG="latest"
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            TAG="${{ github.ref_name }}"
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            TAG="${GITHUB_REF_NAME}"
           fi
           SHA256=$(sha256sum dist/SubNexa.apk | awk '{print $1}')
           SIZE=$(stat -c%s dist/SubNexa.apk)
           jq -n \
-            --argjson versionCode "${{ github.run_number }}" \
-            --arg versionName "1.0.${{ github.run_number }}" \
-            --arg apkUrl "https://github.com/${{ github.repository }}/releases/download/$TAG/SubNexa.apk" \
+            --argjson versionCode "$VERSION_CODE" \
+            --arg versionName "$VERSION_NAME" \
+            --arg apkUrl "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/SubNexa.apk" \
             --arg sha256 "$SHA256" \
             --argjson apkSize "$SIZE" \
             '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, sha256: $sha256, apkSize: $apkSize}' > dist/version.json
+          cat dist/version.json
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
