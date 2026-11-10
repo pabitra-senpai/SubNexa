@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.subnexa.app.domain.font.FontManager
+import com.subnexa.app.domain.font.SubtitleLanguageInfo
 import com.subnexa.app.domain.font.SubtitleFontItem
 import com.subnexa.app.ui.theme.Accent
 import com.subnexa.app.ui.theme.Border
@@ -67,7 +68,9 @@ import com.subnexa.app.ui.theme.TextSecondary
 fun SubtitleFontSelector(
   selectedFontId: String,
   onFontSelected: (String) -> Unit,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  /** Language + sample line of the loaded subtitle. Pass NONE (e.g. in Settings) when no subtitle is open. */
+  subtitleInfo: SubtitleLanguageInfo = SubtitleLanguageInfo.NONE
 ) {
   val context = LocalContext.current
   var availableFonts by remember { mutableStateOf(FontManager.getAvailableFonts(context)) }
@@ -109,6 +112,11 @@ fun SubtitleFontSelector(
   val selectedFontFamily = remember(selectedFontId) {
     FontManager.resolveFontFamily(context, selectedFontId)
   }
+
+  // Fonts are previewed with the user's real subtitle text when there is one, otherwise with
+  // sample words in the scripts the font actually supports (never hard-coded Bengali/Hindi).
+  val requiredScripts = subtitleInfo.requiredScripts
+  fun previewFor(item: SubtitleFontItem): String = subtitleInfo.sampleLine ?: item.sampleText()
 
   Column(modifier = modifier.fillMaxWidth()) {
     Text(
@@ -152,11 +160,12 @@ fun SubtitleFontSelector(
           )
           Spacer(modifier = Modifier.height(2.dp))
           Text(
-            text = "বাংলা • English • हिंदी",
+            text = previewFor(selectedFontItem),
             fontFamily = selectedFontFamily,
             fontSize = 13.sp,
             color = Accent,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
           )
         }
 
@@ -248,6 +257,34 @@ fun SubtitleFontSelector(
           )
         }
 
+        // Language hint: tells the user what the subtitle is written in and which fonts can draw it.
+        val primaryScript = subtitleInfo.primary
+        if (requiredScripts.isNotEmpty() && primaryScript != null) {
+          val needsImport = availableFonts.none { it.isCustom && it.supports(requiredScripts) }
+          Spacer(modifier = Modifier.height(10.dp))
+          Text(
+            text = "Subtitle language: " + requiredScripts.joinToString(", ") { it.label },
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary
+          )
+          if (needsImport) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+              text = "No bundled font includes ${primaryScript.label}. \"System default\" works, " +
+                "or import a ${primaryScript.label} font (.ttf / .otf / .ttc) for a stylish look.",
+              style = MaterialTheme.typography.bodySmall,
+              color = TextSecondary
+            )
+          } else {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+              text = "Fonts that support ${primaryScript.label} are listed first.",
+              style = MaterialTheme.typography.bodySmall,
+              color = TextSecondary
+            )
+          }
+        }
+
         // 10.dp gap between the Import font button (or error) and the font list
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -259,8 +296,11 @@ fun SubtitleFontSelector(
             .verticalScroll(rememberScrollState()),
           verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-          availableFonts.forEach { item ->
+          // Stable sort: fonts that can draw the subtitle's language come first.
+          val orderedFonts = availableFonts.sortedByDescending { it.supports(requiredScripts) }
+          orderedFonts.forEach { item ->
             val isSelected = item.id == selectedFontId
+            val supported = item.supports(requiredScripts)
             val fontSample = remember(item.id) {
               FontManager.resolveFontFamily(context, item.id)
             }
@@ -298,11 +338,35 @@ fun SubtitleFontSelector(
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
-                    text = "বাংলা • English • हिंदी",
-                    fontFamily = fontSample,
-                    fontSize = 13.sp,
-                    color = if (isSelected) Accent else TextMuted
+                    text = item.scriptSummary(),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = previewFor(item),
+                    fontFamily = fontSample,
+                    fontSize = 15.sp,
+                    color = when {
+                      !supported -> TextMuted
+                      isSelected -> Accent
+                      else -> TextPrimary
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  if (!supported) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = "Doesn't include " +
+                        requiredScripts.filter { it !in item.scripts }.joinToString(", ") { it.label } +
+                        " — device font is used instead",
+                      style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                      color = DangerRed
+                    )
+                  }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
