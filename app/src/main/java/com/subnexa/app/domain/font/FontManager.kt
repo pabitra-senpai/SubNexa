@@ -18,8 +18,34 @@ import java.util.concurrent.ConcurrentHashMap
 data class SubtitleFontItem(
   val id: String,
   val displayName: String,
-  val isCustom: Boolean = false
-)
+  val isCustom: Boolean = false,
+  /** Scripts this font really has glyphs for. */
+  val scripts: Set<FontScript> = emptySet(),
+  /** True for the device font: it falls back per character, so it can show every language. */
+  val coversAllLanguages: Boolean = false
+) {
+  /** Can this font draw text written in all of [required] scripts? */
+  fun supports(required: Set<FontScript>): Boolean =
+    required.isEmpty() || coversAllLanguages || scripts.containsAll(required)
+
+  /** Short sample words shown in this font's own typeface, e.g. "日本語 • English". */
+  fun sampleText(): String {
+    if (coversAllLanguages) return "English • বাংলা • 日本語 • 한국어"
+    val order = listOf(
+      FontScript.JAPANESE, FontScript.KOREAN, FontScript.CHINESE, FontScript.BENGALI,
+      FontScript.DEVANAGARI, FontScript.ARABIC, FontScript.THAI, FontScript.CYRILLIC, FontScript.LATIN
+    )
+    val words = order.filter { it in scripts }.take(3).map { it.sample }
+    return if (words.isEmpty()) "Aa Bb Cc 123" else words.joinToString(" • ")
+  }
+
+  /** "Bengali · Latin" style summary for the badge line. */
+  fun scriptSummary(): String = when {
+    coversAllLanguages -> "All languages (device fonts)"
+    scripts.isEmpty() -> "Language support unknown"
+    else -> scripts.sortedBy { it.ordinal }.joinToString(" · ") { it.label }
+  }
+}
 
 object FontManager {
 
@@ -27,16 +53,31 @@ object FontManager {
   private const val MAX_CUSTOM_FONTS = 10
   private const val MAX_FONT_SIZE_BYTES = 20 * 1024 * 1024L // 20 MB
 
+  // Script coverage below was verified against the bundled .ttf cmap tables (see FontManagerTest).
   val BUILT_IN_FONTS = listOf(
-    SubtitleFontItem("hind_siliguri", "Hind Siliguri (Bengali + Latin)"),
-    SubtitleFontItem("noto_sans_bengali", "Noto Sans Bengali"),
-    SubtitleFontItem("noto_serif_bengali", "Noto Serif Bengali"),
-    SubtitleFontItem("noto_sans_devanagari", "Noto Sans Devanagari (Hindi)"),
-    SubtitleFontItem("inter", "Inter (Latin)"),
-    SubtitleFontItem("system", "System default")
+    SubtitleFontItem("hind_siliguri", "Hind Siliguri", scripts = setOf(FontScript.BENGALI, FontScript.LATIN)),
+    SubtitleFontItem("noto_sans_bengali", "Noto Sans Bengali", scripts = setOf(FontScript.BENGALI)),
+    SubtitleFontItem("noto_serif_bengali", "Noto Serif Bengali", scripts = setOf(FontScript.BENGALI)),
+    SubtitleFontItem("noto_sans_devanagari", "Noto Sans Devanagari", scripts = setOf(FontScript.DEVANAGARI)),
+    SubtitleFontItem("inter", "Inter", scripts = setOf(FontScript.LATIN, FontScript.CYRILLIC)),
+    SubtitleFontItem("system", "System default", scripts = FontScript.entries.toSet(), coversAllLanguages = true)
   )
 
+  private val FONT_EXTENSIONS = setOf("ttf", "otf", "ttc", "otc")
+
   private val customTypefaceCache = ConcurrentHashMap<String, FontFamily>()
+  private val customMetaCache = ConcurrentHashMap<String, Pair<Long, FontMeta?>>()
+
+  private fun isFontFile(file: File) = file.isFile && file.extension.lowercase() in FONT_EXTENSIONS
+
+  /** Font name + supported scripts read from the file itself (cached until the file changes). */
+  fun customFontMeta(file: File): FontMeta? {
+    val cached = customMetaCache[file.name]
+    if (cached != null && cached.first == file.lastModified()) return cached.second
+    val meta = FontParser.parse(file)
+    customMetaCache[file.name] = file.lastModified() to meta
+    return meta
+  }
 
   fun getFontsDirectory(context: Context): File {
     return File(context.filesDir, "fonts").apply { mkdirs() }
@@ -45,16 +86,16 @@ object FontManager {
   fun getAvailableFonts(context: Context): List<SubtitleFontItem> {
     val fonts = BUILT_IN_FONTS.toMutableList()
     val customDir = getFontsDirectory(context)
-    val customFiles = customDir.listFiles { file ->
-      file.isFile && (file.extension.equals("ttf", ignoreCase = true) || file.extension.equals("otf", ignoreCase = true))
-    } ?: emptyArray()
+    val customFiles = customDir.listFiles { file -> isFontFile(file) } ?: emptyArray()
 
     for (file in customFiles.sortedBy { it.name.lowercase() }) {
+      val meta = customFontMeta(file)
       fonts.add(
         SubtitleFontItem(
           id = "custom:${file.name}",
-          displayName = file.name,
-          isCustom = true
+          displayName = meta?.name ?: file.nameWithoutExtension,
+          isCustom = true,
+          scripts = meta?.scripts ?: emptySet()
         )
       )
     }
@@ -95,9 +136,7 @@ object FontManager {
   fun importCustomFont(context: Context, uri: Uri): Result<SubtitleFontItem> {
     return try {
       val customDir = getFontsDirectory(context)
-      val existingCustom = customDir.listFiles { file ->
-        file.isFile && (file.extension.equals("ttf", ignoreCase = true) || file.extension.equals("otf", ignoreCase = true))
-      } ?: emptyArray()
+      val existingCustom = customDir.listFiles { file -> isFontFile(file) } ?: emptyArray()
 
       if (existingCustom.size >= MAX_CUSTOM_FONTS) {
         return Result.failure(IllegalStateException("Maximum of $MAX_CUSTOM_FONTS custom fonts reached. Please delete one first."))
@@ -117,8 +156,8 @@ object FontManager {
       }
 
       val ext = displayName.substringAfterLast('.', "").lowercase()
-      if (ext != "ttf" && ext != "otf") {
-        return Result.failure(IllegalArgumentException("This file cannot be used as a font (expected .ttf or .otf)"))
+      if (ext !in FONT_EXTENSIONS) {
+        return Result.failure(IllegalArgumentException("This file cannot be used as a font (expected .ttf, .otf or .ttc)"))
       }
 
       // Check file size & copy to cache for validation
@@ -184,10 +223,12 @@ object FontManager {
         cacheFile.delete()
       }
 
+      val meta = customFontMeta(destFile)
       val item = SubtitleFontItem(
         id = "custom:$finalName",
-        displayName = finalName,
-        isCustom = true
+        displayName = meta?.name ?: finalName.substringBeforeLast('.'),
+        isCustom = true,
+        scripts = meta?.scripts ?: emptySet()
       )
       Result.success(item)
     } catch (e: Exception) {
@@ -199,6 +240,7 @@ object FontManager {
     if (!fontId.startsWith("custom:")) return false
     val fileName = fontId.removePrefix("custom:")
     customTypefaceCache.remove(fileName)
+    customMetaCache.remove(fileName)
     val file = File(getFontsDirectory(context), fileName)
     return if (file.exists()) {
       file.delete()
