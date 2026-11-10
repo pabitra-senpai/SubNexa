@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Video surface for the editor. A TextureView (instead of the default SurfaceView) is drawn
+  inside the normal view hierarchy, so it fades and animates together with the screen when
+  navigating. A SurfaceView ignores those animations and causes a visible glitch on exit.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view"
+    app:use_controller="false" />
