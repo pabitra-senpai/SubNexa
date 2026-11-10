@@ -4,6 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -47,7 +50,12 @@ fun SubNexaAppNavigation() {
 
   NavHost(
     navController = navController,
-    startDestination = "home"
+    startDestination = "home",
+    // Short, light fades instead of the slow default crossfade (700 ms).
+    enterTransition = { fadeIn(animationSpec = tween(180)) },
+    exitTransition = { fadeOut(animationSpec = tween(120)) },
+    popEnterTransition = { fadeIn(animationSpec = tween(180)) },
+    popExitTransition = { fadeOut(animationSpec = tween(120)) }
   ) {
     composable("home") {
       val homeViewModel: HomeViewModel = viewModel()
@@ -74,6 +82,8 @@ fun SubNexaAppNavigation() {
         projectId = projectId,
         viewModel = editorViewModel,
         onNavigateBack = {
+          // Stop playback first so no video/audio keeps running during the exit animation.
+          editorViewModel.pause()
           navController.popBackStack()
         }
       )
