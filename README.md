@@ -11,7 +11,7 @@ A simple, offline subtitle editor for Android.
 [![Download APK](https://img.shields.io/badge/%E2%AC%87%20Download%20APK-E11D48?style=for-the-badge&logo=android&logoColor=white)](https://github.com/pabitra-senpai/SubNexa/releases/latest/download/SubNexa.apk)
 
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-09090B?logo=android&logoColor=E11D48)
-![Offline](https://img.shields.io/badge/100%25-Offline-09090B)
+![Works Offline](https://img.shields.io/badge/Works-Offline-09090B)
 ![No ads](https://img.shields.io/badge/No%20ads-No%20tracking-09090B)
 
 </div>
@@ -44,7 +44,7 @@ Works on Android 8.0 and newer.
 
 ## Privacy
 
-No account. No internet. No ads. No tracking. The app asks for **no permissions** and only opens the files you pick.
+No account. Works offline. No ads. No tracking. The app asks for no personal data and only opens the files you pick. The internet is used only when you tap "Check for Updates", and an update is installed only after you confirm it in Android.
 
 ## Build it yourself
 

@@ -46,11 +46,29 @@ jobs:
           echo "Found: $APK"
           cp "$APK" dist/SubNexa.apk
 
+      - name: Generate update manifest
+        run: |
+          TAG="latest"
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            TAG="${{ github.ref_name }}"
+          fi
+          SHA256=$(sha256sum dist/SubNexa.apk | awk '{print $1}')
+          SIZE=$(stat -c%s dist/SubNexa.apk)
+          jq -n \
+            --argjson versionCode "${{ github.run_number }}" \
+            --arg versionName "1.0.${{ github.run_number }}" \
+            --arg apkUrl "https://github.com/${{ github.repository }}/releases/download/$TAG/SubNexa.apk" \
+            --arg sha256 "$SHA256" \
+            --argjson apkSize "$SIZE" \
+            '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, sha256: $sha256, apkSize: $apkSize}' > dist/version.json
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: SubNexa-APK
-          path: dist/SubNexa.apk
+          path: |
+            dist/SubNexa.apk
+            dist/version.json
 
       - name: Move the latest tag
         if: github.ref == 'refs/heads/main'
@@ -69,12 +87,16 @@ jobs:
           body: |
             Automatic build from the main branch.
             Download **SubNexa.apk** below and install it on your Android phone.
-          files: dist/SubNexa.apk
+          files: |
+            dist/SubNexa.apk
+            dist/version.json
           make_latest: true
 
       - name: Publish versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/SubNexa.apk
+          files: |
+            dist/SubNexa.apk
+            dist/version.json
           generate_release_notes: true

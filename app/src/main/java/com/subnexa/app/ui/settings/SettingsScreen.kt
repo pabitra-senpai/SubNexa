@@ -67,6 +67,14 @@ import com.subnexa.app.ui.theme.TextMuted
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 
+import android.app.Application
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.subnexa.app.about.AboutViewModel
+import com.subnexa.app.about.aboutSection
+import com.subnexa.app.about.subNexaAboutConfig
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -75,6 +83,12 @@ fun SettingsScreen(
 ) {
   val appearance by viewModel.defaultAppearance.collectAsStateWithLifecycle()
   val exportFormat by viewModel.defaultExportFormat.collectAsStateWithLifecycle()
+
+  val application = LocalContext.current.applicationContext as Application
+  val aboutConfig = remember { subNexaAboutConfig() }
+  val aboutViewModel: AboutViewModel = viewModel(
+    factory = AboutViewModel.Factory(application, aboutConfig)
+  )
 
   BackHandler {
     onNavigateBack()
@@ -329,64 +343,8 @@ fun SettingsScreen(
         }
       }
 
-      // 4. About SubNexa
-      item {
-        HairlineCard(modifier = Modifier.fillMaxWidth()) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = null,
-                tint = Accent,
-                modifier = Modifier.size(22.dp)
-              )
-              Spacer(modifier = Modifier.width(12.dp))
-              Text(
-                text = "About SubNexa",
-                style = MaterialTheme.typography.titleMedium.copy(
-                  fontWeight = FontWeight.SemiBold,
-                  fontSize = 15.sp
-                ),
-                color = TextPrimary
-              )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-              text = "SubNexa is an offline-first subtitle editor designed to edit, synchronize, and export SRT and VTT subtitles with local video playback reference.",
-              style = MaterialTheme.typography.bodyMedium,
-              color = TextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-              text = "Tagline: Edit. Sync. Export.\nYour video is only used as a playback reference and is never altered or exported.",
-              style = MaterialTheme.typography.bodySmall,
-              color = TextMuted
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-              Text(
-                text = "App version",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextPrimary
-              )
-              Text(
-                text = "1.0.0",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextMuted
-              )
-            }
-          }
-        }
-      }
+      // 4. About + Developer + Updates Section
+      aboutSection(config = aboutConfig, viewModel = aboutViewModel)
     }
   }
 }
