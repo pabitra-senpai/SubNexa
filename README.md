@@ -48,15 +48,45 @@ No account. Works offline. No ads. No tracking. The app asks for no personal dat
 
 ## Build it yourself
 
-You need JDK 17, Gradle 9.3.1 and the Android SDK.
+You need JDK 17 and the Android SDK. The Gradle wrapper downloads Gradle 9.3.1 automatically.
 
 ```bash
 git clone https://github.com/pabitra-senpai/SubNexa.git
 cd SubNexa
-gradle assembleDebug
+./gradlew assembleDebug      # APK in app/build/outputs/apk/debug/
+./gradlew testDebugUnitTest  # run unit tests
 ```
 
-The APK appears in `app/build/outputs/apk/debug/`. Every push to `main` is also built automatically by GitHub Actions.
+Every push to `main` is built, tested and released automatically by GitHub Actions.
+
+## Release signing
+
+Release APKs are signed with your own private key, never a debug key. Keep this key safe: if you lose it, existing users cannot update the app without uninstalling it first.
+
+1. Create a keystore once (needs JDK):
+
+   ```bash
+   keytool -genkeypair -v -keystore release.jks -alias upload \
+     -keyalg RSA -keysize 4096 -validity 10000
+   base64 -w 0 release.jks > release.keystore.base64
+   ```
+
+2. In GitHub go to **Settings > Secrets and variables > Actions** and add:
+
+   | Secret | Value |
+   | --- | --- |
+   | `KEYSTORE_BASE64` | contents of `release.keystore.base64` |
+   | `STORE_PASSWORD` | keystore password |
+   | `KEY_PASSWORD` | key password |
+   | `KEY_ALIAS` | optional, defaults to `upload` |
+
+3. Back up `release.jks` and the passwords somewhere private. Never commit them (they are in `.gitignore`).
+
+For a local signed build, put `release.jks` in the project root and set `STORE_PASSWORD` and `KEY_PASSWORD`, then run `./gradlew assembleRelease`.
+
+## Versioning
+
+CI sets the version automatically. `versionCode` is the build time in minutes since the Unix epoch, so it always increases. `versionName` is `1.0.<run number>` for `main` builds, or the tag name for `v*` tags (for example `v1.2.0` gives `1.2.0`).
 
 ## Built with
 
@@ -64,7 +94,7 @@ Kotlin · Jetpack Compose · Material 3 · Media3 ExoPlayer
 
 ## License
 
-See the [LICENSE](LICENSE) file.
+Released under the [MIT License](LICENSE). Bundled fonts are listed in [THIRD_PARTY_FONTS.md](THIRD_PARTY_FONTS.md).
 
 ## Feedback
 
