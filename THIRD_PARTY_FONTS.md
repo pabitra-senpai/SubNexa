@@ -13,28 +13,28 @@ SubNexa bundles the following open-source static TrueType font files directly in
 
 ### 2. Noto Sans Bengali
 - **Designer / Foundry:** Google / Monotype
-- **Script Support:** Bengali (comprehensive conjuncts/যুক্তাক্ষর), Latin
+- **Script Support:** Bengali (comprehensive conjuncts/যুক্তাক্ষর); no Latin glyphs
 - **Weights Bundled:** Regular, Bold
 - **License:** [SIL Open Font License 1.1](http://scripts.sil.org/OFL)
 - **Source:** [Google Fonts - Noto Sans Bengali](https://fonts.google.com/specimen/Noto+Sans+Bengali)
 
 ### 3. Noto Serif Bengali
 - **Designer / Foundry:** Google / Monotype
-- **Script Support:** Bengali serif typography, Latin
+- **Script Support:** Bengali serif typography; no Latin glyphs
 - **Weights Bundled:** Regular, Bold
 - **License:** [SIL Open Font License 1.1](http://scripts.sil.org/OFL)
 - **Source:** [Google Fonts - Noto Serif Bengali](https://fonts.google.com/specimen/Noto+Serif+Bengali)
 
 ### 4. Noto Sans Devanagari
 - **Designer / Foundry:** Google / Monotype
-- **Script Support:** Devanagari (Hindi, Marathi, Sanskrit, Nepali), Latin
+- **Script Support:** Devanagari (Hindi, Marathi, Sanskrit, Nepali); no Latin glyphs
 - **Weights Bundled:** Regular, Bold
 - **License:** [SIL Open Font License 1.1](http://scripts.sil.org/OFL)
 - **Source:** [Google Fonts - Noto Sans Devanagari](https://fonts.google.com/specimen/Noto+Sans+Devanagari)
 
 ### 5. Inter
 - **Designer / Foundry:** Rasmus Andersson
-- **Script Support:** Latin, Greek, Cyrillic
+- **Script Support:** Latin, Cyrillic
 - **Weights Bundled:** Regular (variable wght)
 - **License:** [SIL Open Font License 1.1](http://scripts.sil.org/OFL)
 - **Source:** [Google Fonts - Inter](https://fonts.google.com/specimen/Inter)
@@ -57,6 +57,6 @@ SubNexa bundles the following open-source static TrueType font files directly in
 
 ## User-Imported Custom Fonts Notice
 
-SubNexa allows users to optionally import custom font files (`.ttf` or `.otf`) locally onto their device through Android's Storage Access Framework. 
+SubNexa allows users to optionally import custom font files (`.ttf`, `.otf` or `.ttc`) locally onto their device through Android's Storage Access Framework. 
 
 Imported font files are copied strictly to the application's private on-device sandbox (`files/fonts/`). They are never uploaded or transmitted to any remote servers. Ensuring appropriate licensing, usage rights, and font compatibility for any user-imported font files is the sole responsibility of the user.
