@@ -476,8 +476,13 @@ fun EditorScreen(
     }
 
     is EditorSheetState.Appearance -> {
+      val entries = uiState.project?.entries
+      val subtitleInfo = androidx.compose.runtime.remember(entries) {
+        com.subnexa.app.domain.font.SubtitleLanguageInfo.from(entries?.map { it.text } ?: emptyList())
+      }
       AppearanceBottomSheet(
         initialAppearance = uiState.project?.appearance ?: com.subnexa.app.domain.model.SubtitleAppearance(),
+        subtitleInfo = subtitleInfo,
         onDismiss = { viewModel.closeSheet() },
         onAppearanceChanged = { newAppearance ->
           viewModel.updateAppearance(newAppearance)

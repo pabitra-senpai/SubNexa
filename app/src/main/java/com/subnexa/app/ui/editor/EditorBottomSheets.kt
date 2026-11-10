@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import com.subnexa.app.domain.font.FontManager
+import com.subnexa.app.domain.font.SubtitleLanguageInfo
 import com.subnexa.app.ui.components.SubtitleFontSelector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -633,6 +634,7 @@ fun ExportBottomSheet(
 @Composable
 fun AppearanceBottomSheet(
   initialAppearance: SubtitleAppearance,
+  subtitleInfo: SubtitleLanguageInfo = SubtitleLanguageInfo.NONE,
   onDismiss: () -> Unit,
   onAppearanceChanged: (SubtitleAppearance) -> Unit
 ) {
@@ -649,6 +651,10 @@ fun AppearanceBottomSheet(
 
   val previewFont = remember(fontId) {
     FontManager.resolveFontFamily(context, fontId)
+  }
+  // Preview uses the real subtitle text; without a subtitle, sample words in the font's own scripts.
+  val previewSample = remember(fontId) {
+    FontManager.getAvailableFonts(context).firstOrNull { it.id == fontId }?.sampleText() ?: "Aa Bb Cc 123"
   }
 
   fun notifyChange() {
@@ -709,7 +715,7 @@ fun AppearanceBottomSheet(
           BgMode.SOLID -> Color(0xFF000000)
         }
         Text(
-          text = "Preview: Subtitle caption styling / বাংলা সাবটাইটেল",
+          text = subtitleInfo.sampleLine ?: previewSample,
           color = Color(textColorHex),
           fontSize = fontSize.sp,
           fontFamily = previewFont,
@@ -826,6 +832,7 @@ fun AppearanceBottomSheet(
 
       // Subtitle font selector
       SubtitleFontSelector(
+        subtitleInfo = subtitleInfo,
         selectedFontId = fontId,
         onFontSelected = {
           fontId = it
