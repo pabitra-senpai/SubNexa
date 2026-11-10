@@ -1,5 +1,6 @@
 package com.subnexa.app.ui.editor
 
+import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -55,6 +56,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.subnexa.app.R
 import com.subnexa.app.domain.font.FontManager
 import com.subnexa.app.domain.model.BgMode
 import com.subnexa.app.domain.model.SubtitleAppearance
@@ -114,7 +116,8 @@ fun VideoPlayerSection(
     AndroidView(
       modifier = Modifier.fillMaxSize(),
       factory = { ctx ->
-        PlayerView(ctx).apply {
+        // Inflated from XML so the video uses a TextureView (animates with the screen on exit).
+        (LayoutInflater.from(ctx).inflate(R.layout.view_player_texture, null, false) as PlayerView).apply {
           layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
