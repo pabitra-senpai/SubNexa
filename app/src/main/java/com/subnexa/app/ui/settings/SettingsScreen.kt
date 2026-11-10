@@ -26,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Output
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,7 +62,6 @@ import com.subnexa.app.ui.theme.SwatchCyan
 import com.subnexa.app.ui.theme.SwatchGreen
 import com.subnexa.app.ui.theme.SwatchWhite
 import com.subnexa.app.ui.theme.SwatchYellow
-import com.subnexa.app.ui.theme.TextMuted
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 

@@ -512,7 +512,7 @@ private fun AppUpdatesCard(viewModel: AboutViewModel) {
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                  text = "Update Check Failed",
+                  text = "Update Failed",
                   style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                   color = TextPrimary
                 )
