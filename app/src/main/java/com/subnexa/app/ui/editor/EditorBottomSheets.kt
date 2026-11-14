@@ -354,6 +354,7 @@ fun EditSubtitleBottomSheet(
 @Composable
 fun GlobalSyncBottomSheet(
   subtitleCount: Int,
+  startTimesMs: List<Long> = emptyList(),
   onDismiss: () -> Unit,
   onApply: (offsetSeconds: Double) -> Unit
 ) {
@@ -362,6 +363,15 @@ fun GlobalSyncBottomSheet(
 
   val parsedOffset = offsetSeconds.toDoubleOrNull()
   val isValid = parsedOffset != null
+
+  // Earliest-start info, used to warn when an earlier shift would push lines before 00:00.
+  val earliestStartMs = remember(startTimesMs) { startTimesMs.minOrNull() ?: 0L }
+  val offsetMsForWarning = ((parsedOffset ?: 0.0) * 1000.0).toLong()
+  val clampedCount = if (offsetMsForWarning < 0L) {
+    startTimesMs.count { it + offsetMsForWarning < 0L }
+  } else 0
+  // Largest earlier shift (in seconds, 2 decimals, rounded down) that moves nothing below 0.
+  val maxSafeEarlierSeconds = Math.floor(earliestStartMs / 10.0) / 100.0
 
   fun adjustOffset(delta: Double) {
     val cur = offsetSeconds.toDoubleOrNull() ?: 0.0
@@ -448,6 +458,44 @@ fun GlobalSyncBottomSheet(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true
       )
+
+      if (clampedCount > 0) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.Top) {
+          Icon(
+            imageVector = Icons.Outlined.WarningAmber,
+            contentDescription = null,
+            tint = SwatchYellow,
+            modifier = Modifier
+              .padding(top = 2.dp)
+              .size(16.dp)
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Column {
+            Text(
+              text = "$clampedCount subtitle(s) would go before 00:00:00.000 and stop at 0, " +
+                "so their spacing will change. Safest earlier shift: " +
+                "${String.format(Locale.US, "%.2f", maxSafeEarlierSeconds)}s.",
+              style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
+            )
+            if (maxSafeEarlierSeconds > 0.0) {
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                text = "Use safe shift",
+                style = MaterialTheme.typography.labelMedium.copy(
+                  fontWeight = FontWeight.SemiBold,
+                  color = Accent
+                ),
+                modifier = Modifier
+                  .clickable {
+                    offsetSeconds = String.format(Locale.US, "%.2f", -maxSafeEarlierSeconds)
+                  }
+                  .testTag("use_safe_shift")
+              )
+            }
+          }
+        }
+      }
 
       Spacer(modifier = Modifier.height(24.dp))
 

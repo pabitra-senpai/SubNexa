@@ -18,7 +18,10 @@ import com.subnexa.app.domain.model.SubtitleAppearance
 import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.parser.SubtitleParser
 import com.subnexa.app.domain.util.FileUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +33,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
 sealed interface EditorSheetState {
@@ -63,6 +69,13 @@ data class EditorUiState(
 )
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
+
+  private companion object {
+    // App-level scope: viewModelScope is already cancelled when onCleared() runs, so the
+    // final save must not depend on it. The mutex keeps writes of project files in order.
+    val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val saveMutex = Mutex()
+  }
 
   private val projectRepository = ProjectRepository.getInstance(application)
   private val settingsRepository = SettingsRepository.getInstance(application)
@@ -507,6 +520,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   fun applyGlobalSync(offsetSeconds: Double) {
     val offsetMs = (offsetSeconds * 1000.0).toLong()
     val project = _uiState.value.project ?: return
+    val clampedCount = project.entries.count { it.startMs + offsetMs < 0L }
 
     val shiftedEntries = project.entries.map { entry ->
       val newStart = (entry.startMs + offsetMs).coerceAtLeast(0L)
@@ -527,7 +541,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     viewModelScope.launch {
       _events.emit(
-        EditorEvent.ShowSnackbar("Shifted all ${shiftedEntries.size} subtitles by ${String.format("%.2f", offsetSeconds)}s")
+        EditorEvent.ShowSnackbar(
+          "Shifted all ${shiftedEntries.size} subtitles by ${String.format(Locale.US, "%.2f", offsetSeconds)}s" +
+            if (clampedCount > 0) " ($clampedCount stopped at 00:00:00.000)" else ""
+        )
       )
     }
   }
@@ -638,25 +655,27 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
-  private fun triggerImmediateSave(project: Project) {
-    autosaveJob?.cancel()
-    viewModelScope.launch {
-      val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
-      val toSave = project.copy(lastPlaybackPositionMs = pos)
-      projectRepository.saveProject(toSave)
+  private fun persistProject(project: Project) {
+    persistScope.launch {
+      saveMutex.withLock { projectRepository.saveProject(project) }
     }
   }
 
+  private fun triggerImmediateSave(project: Project) {
+    autosaveJob?.cancel()
+    // Player position must be read on the main thread, before handing off to the IO scope.
+    val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
+    persistProject(project.copy(lastPlaybackPositionMs = pos))
+  }
+
+  /**
+   * Saves playback position and current project state. Does NOT touch lastEditedTimeMs:
+   * that is only updated by real edits, so playing or seeking never marks a project as edited.
+   */
   fun saveCurrentStateToDisk() {
     val project = _uiState.value.project ?: return
     val pos = exoPlayer?.currentPosition ?: _playbackPositionMs.value
-    val toSave = project.copy(
-      lastPlaybackPositionMs = pos,
-      lastEditedTimeMs = System.currentTimeMillis()
-    )
-    viewModelScope.launch {
-      projectRepository.saveProject(toSave)
-    }
+    persistProject(project.copy(lastPlaybackPositionMs = pos))
   }
 
   override fun onCleared() {

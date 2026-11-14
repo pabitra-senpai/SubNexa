@@ -453,8 +453,12 @@ fun EditorScreen(
     }
 
     is EditorSheetState.GlobalSync -> {
+      val syncStartTimes = remember(uiState.project?.entries) {
+        uiState.project?.entries?.map { it.startMs } ?: emptyList()
+      }
       GlobalSyncBottomSheet(
         subtitleCount = uiState.project?.entries?.size ?: 0,
+        startTimesMs = syncStartTimes,
         onDismiss = { viewModel.closeSheet() },
         onApply = { offsetSeconds ->
           viewModel.applyGlobalSync(offsetSeconds)
