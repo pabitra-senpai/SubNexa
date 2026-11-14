@@ -4,9 +4,11 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Subtitles
@@ -47,13 +50,16 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,6 +90,7 @@ fun HomeScreen(
   val summaries by viewModel.summaries.collectAsStateWithLifecycle()
   val snackbarHostState = remember { SnackbarHostState() }
   val embeddedState by viewModel.embeddedState.collectAsStateWithLifecycle()
+  var renameTarget by remember { mutableStateOf<ProjectSummary?>(null) }
 
   // File pickers
   val videoPickerLauncher = rememberLauncherForActivityResult(
@@ -329,6 +336,7 @@ fun HomeScreen(
             ProjectCard(
               summary = summary,
               onClick = { onNavigateToEditor(summary.id) },
+              onRename = { renameTarget = summary },
               onDelete = { viewModel.deleteProject(summary) }
             )
           }
@@ -346,17 +354,38 @@ fun HomeScreen(
     onSelectTrack = viewModel::selectEmbeddedTrack,
     onCancelLoading = viewModel::cancelEmbeddedLoading
   )
+
+  renameTarget?.let { target ->
+    RenameProjectDialog(
+      currentName = target.videoName,
+      onConfirm = { newName ->
+        viewModel.renameProject(target, newName)
+        renameTarget = null
+      },
+      onDismiss = { renameTarget = null }
+    )
+  }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProjectCard(
   summary: ProjectSummary,
   onClick: () -> Unit,
+  onRename: () -> Unit,
   onDelete: () -> Unit
 ) {
+  val isEmpty = summary.subtitleCount == 0
+  val shape = RoundedCornerShape(12.dp)
+
   HairlineCard(
-    modifier = Modifier.fillMaxWidth(),
-    onClick = onClick
+    // Tap opens the project, long-press renames it.
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(shape)
+      .combinedClickable(onClick = onClick, onLongClick = onRename),
+    borderColor = if (isEmpty) Accent.copy(alpha = 0.45f) else Border,
+    backgroundColor = if (isEmpty) Accent.copy(alpha = 0.07f) else Surface
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
@@ -367,22 +396,12 @@ private fun ProjectCard(
         modifier = Modifier.weight(1f),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Box(
-          modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(SurfaceVariant),
-          contentAlignment = Alignment.Center
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Movie,
-            contentDescription = null,
-            tint = Accent,
-            modifier = Modifier.size(20.dp)
-          )
-        }
+        VideoThumbnail(
+          videoUri = summary.videoUri,
+          modifier = Modifier.size(56.dp)
+        )
         Spacer(modifier = Modifier.width(14.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
           Text(
             text = summary.videoName,
             style = MaterialTheme.typography.titleMedium.copy(
@@ -390,42 +409,65 @@ private fun ProjectCard(
               fontSize = 15.sp
             ),
             color = TextPrimary,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
           )
           Spacer(modifier = Modifier.height(4.dp))
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
+          if (isEmpty) {
             Text(
-              text = "${summary.subtitleCount} subtitles",
+              text = "No subtitles yet \u2022 Open to import",
               style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-              color = TextSecondary
+              color = Accent,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
             )
+          } else {
+            val label = summary.sourceLabel
             Text(
-              text = "•",
-              style = MaterialTheme.typography.bodySmall,
-              color = TextMuted
-            )
-            Text(
-              text = TimeUtils.timeAgo(summary.lastEditedTimeMs),
-              style = MaterialTheme.typography.bodySmall,
-              color = TextMuted
+              text = if (label.isNullOrBlank()) {
+                "${summary.subtitleCount} subtitles"
+              } else {
+                "${summary.subtitleCount} subtitles \u2022 $label"
+              },
+              style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+              color = TextSecondary,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
             )
           }
+          Spacer(modifier = Modifier.height(2.dp))
+          Text(
+            text = TimeUtils.timeAgo(summary.lastEditedTimeMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted,
+            maxLines = 1
+          )
         }
       }
 
-      IconButton(
-        onClick = onDelete,
-        modifier = Modifier.size(40.dp)
-      ) {
-        Icon(
-          imageVector = Icons.Outlined.Delete,
-          contentDescription = "Delete project",
-          tint = TextMuted,
-          modifier = Modifier.size(18.dp)
-        )
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+          onClick = onRename,
+          modifier = Modifier.size(36.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.Edit,
+            contentDescription = "Rename project",
+            tint = TextMuted,
+            modifier = Modifier.size(18.dp)
+          )
+        }
+        IconButton(
+          onClick = onDelete,
+          modifier = Modifier.size(36.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.Delete,
+            contentDescription = "Delete project",
+            tint = TextMuted,
+            modifier = Modifier.size(18.dp)
+          )
+        }
       }
     }
   }

@@ -289,6 +289,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     _events.emit(HomeEvent.NavigateToEditor(newProject.id))
   }
 
+  fun renameProject(summary: ProjectSummary, newName: String) {
+    val name = newName.trim()
+    if (name.isEmpty() || name == summary.videoName) return
+    viewModelScope.launch {
+      projectRepository.renameProject(summary.id, name)
+    }
+  }
+
   fun deleteProject(summary: ProjectSummary) {
     viewModelScope.launch {
       val deleted = projectRepository.deleteProject(summary.id)

@@ -209,7 +209,7 @@ fun EmbeddedSubtitleDialogs(
 }
 
 @Composable
-private fun DialogCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+internal fun DialogCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
   val shape = RoundedCornerShape(16.dp)
   Column(
     modifier = Modifier
@@ -223,7 +223,7 @@ private fun DialogCard(content: @Composable androidx.compose.foundation.layout.C
 }
 
 @Composable
-private fun DialogTitle(text: String) {
+internal fun DialogTitle(text: String) {
   Text(
     text = text,
     style = MaterialTheme.typography.titleMedium.copy(
