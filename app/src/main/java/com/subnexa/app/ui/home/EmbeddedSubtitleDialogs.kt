@@ -271,13 +271,24 @@ private fun TrackRow(track: EmbeddedTrack, onClick: () -> Unit) {
     }
     Spacer(modifier = Modifier.width(12.dp))
     Column(modifier = Modifier.weight(1f)) {
+      // Language on its own line, then the full track title (wraps up to 3 lines) so that
+      // tracks with similar long names can be told apart.
       Text(
-        text = track.displayName,
+        text = track.languageName,
         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
         color = TextPrimary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
       )
+      if (!track.title.isNullOrBlank()) {
+        Text(
+          text = track.title!!.trim(),
+          style = MaterialTheme.typography.bodySmall,
+          color = TextPrimary.copy(alpha = 0.85f),
+          maxLines = 3,
+          overflow = TextOverflow.Ellipsis
+        )
+      }
       Text(
         text = tags,
         style = MaterialTheme.typography.bodySmall,
