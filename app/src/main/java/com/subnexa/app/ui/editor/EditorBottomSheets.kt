@@ -71,6 +71,7 @@ import com.subnexa.app.domain.model.SubtitlePosition
 import com.subnexa.app.domain.parser.TimeUtils
 import com.subnexa.app.ui.components.PrimaryAccentButton
 import com.subnexa.app.ui.components.SecondarySubNexaButton
+import com.subnexa.app.ui.components.TextColorPicker
 import com.subnexa.app.ui.components.SegmentedControl
 import com.subnexa.app.ui.theme.Accent
 import com.subnexa.app.ui.theme.Background
@@ -758,45 +759,13 @@ fun AppearanceBottomSheet(
       // Text Color Swatches
       Text("Text color", style = MaterialTheme.typography.labelMedium, color = TextPrimary)
       Spacer(modifier = Modifier.height(8.dp))
-      val swatches = listOf(
-        0xFFFAFAFA to SwatchWhite,
-        0xFFFACC15 to SwatchYellow,
-        0xFF22D3EE to SwatchCyan,
-        0xFF4ADE80 to SwatchGreen
-      )
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-      ) {
-        swatches.forEach { (colorLong, composeColor) ->
-          val isSelected = textColorHex == colorLong
-          Box(
-            modifier = Modifier
-              .size(36.dp)
-              .clip(CircleShape)
-              .background(composeColor)
-              .border(
-                width = if (isSelected) 2.5.dp else 0.5.dp,
-                color = if (isSelected) Accent else Border,
-                shape = CircleShape
-              )
-              .clickable {
-                textColorHex = colorLong
-                notifyChange()
-              },
-            contentAlignment = Alignment.Center
-          ) {
-            if (isSelected) {
-              Box(
-                modifier = Modifier
-                  .size(10.dp)
-                  .clip(CircleShape)
-                  .background(Color.Black)
-              )
-            }
-          }
+      TextColorPicker(
+        selectedColor = textColorHex,
+        onColorSelected = {
+          textColorHex = it
+          notifyChange()
         }
-      }
+      )
 
       Spacer(modifier = Modifier.height(16.dp))
 
