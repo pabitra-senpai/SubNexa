@@ -49,5 +49,24 @@ data class ProjectSummary(
   val id: String,
   val videoName: String,
   val subtitleCount: Int,
-  val lastEditedTimeMs: Long
+  val lastEditedTimeMs: Long,
+  /** Used to show a thumbnail on the home screen. Empty when unknown. */
+  val videoUri: String = "",
+  /** Where the subtitles came from, e.g. "Embedded ASS/SSA" or "episode.srt". Null when none. */
+  val sourceLabel: String? = null
 )
+
+/**
+ * Short, human readable description of where a project's subtitles came from.
+ * Returns null when the project has no subtitle lines yet.
+ */
+fun subtitleSourceLabel(subtitleName: String?, entryCount: Int): String? {
+  if (entryCount <= 0) return null
+  val name = subtitleName?.trim().orEmpty()
+  if (name.isEmpty()) return "Added manually"
+  if (name.startsWith("Embedded:")) {
+    val format = Regex("\\(([^()]*)\\)\\s*$").find(name)?.groupValues?.get(1)?.trim()
+    return if (format.isNullOrEmpty()) "Embedded track" else "Embedded $format"
+  }
+  return name
+}
