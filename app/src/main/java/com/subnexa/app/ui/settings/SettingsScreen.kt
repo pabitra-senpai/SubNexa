@@ -51,6 +51,7 @@ import com.subnexa.app.domain.model.BgMode
 import com.subnexa.app.domain.model.ExportFormat
 import com.subnexa.app.domain.model.SubtitlePosition
 import com.subnexa.app.ui.components.HairlineCard
+import com.subnexa.app.ui.components.TextColorPicker
 import com.subnexa.app.ui.components.SegmentedControl
 import com.subnexa.app.ui.components.SubtitleFontSelector
 import com.subnexa.app.ui.theme.Accent
@@ -225,44 +226,10 @@ fun SettingsScreen(
             // Color Swatches
             Text("Default text color", style = MaterialTheme.typography.labelMedium, color = TextPrimary)
             Spacer(modifier = Modifier.height(8.dp))
-            val swatches = listOf(
-              0xFFFAFAFA to SwatchWhite,
-              0xFFFACC15 to SwatchYellow,
-              0xFF22D3EE to SwatchCyan,
-              0xFF4ADE80 to SwatchGreen
+            TextColorPicker(
+              selectedColor = appearance.textColorHex,
+              onColorSelected = { viewModel.updateAppearance(appearance.copy(textColorHex = it)) }
             )
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-              swatches.forEach { (colorLong, composeColor) ->
-                val isSelected = appearance.textColorHex == colorLong
-                Box(
-                  modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(composeColor)
-                    .border(
-                      width = if (isSelected) 2.5.dp else 0.5.dp,
-                      color = if (isSelected) Accent else Border,
-                      shape = CircleShape
-                    )
-                    .clickable {
-                      viewModel.updateAppearance(appearance.copy(textColorHex = colorLong))
-                    },
-                  contentAlignment = Alignment.Center
-                ) {
-                  if (isSelected) {
-                    Box(
-                      modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black)
-                    )
-                  }
-                }
-              }
-            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
