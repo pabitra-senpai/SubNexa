@@ -57,7 +57,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -386,10 +385,7 @@ private fun ProjectCard(
     modifier = Modifier
       .fillMaxWidth()
       .clip(shape)
-      .combinedClickable(onClick = onClick, onLongClick = onRename),
-    borderColor = if (isEmpty) Accent.copy(alpha = 0.45f) else Border,
-    // Must stay fully opaque, otherwise the swipe-to-delete icon behind the card shows through.
-    backgroundColor = if (isEmpty) Accent.copy(alpha = 0.07f).compositeOver(Surface) else Surface
+      .combinedClickable(onClick = onClick, onLongClick = onRename)
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
