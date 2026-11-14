@@ -20,6 +20,8 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class SettingsRepository(private val context: Context) {
 
   companion object {
+    private const val MAX_CUSTOM_COLORS = 8
+
     @Volatile
     private var instance: SettingsRepository? = null
 
@@ -38,6 +40,7 @@ class SettingsRepository(private val context: Context) {
     val SUBTITLE_FONT_ID = stringPreferencesKey("pref_subtitle_font_id")
     val EXPORT_FORMAT = stringPreferencesKey("pref_export_format")
     val EXPORT_FOLDER_URI = stringPreferencesKey("pref_export_folder_uri")
+    val CUSTOM_TEXT_COLORS = stringPreferencesKey("pref_custom_text_colors")
   }
 
   val defaultAppearanceFlow: Flow<SubtitleAppearance> = context.dataStore.data.map { prefs ->
@@ -67,6 +70,27 @@ class SettingsRepository(private val context: Context) {
   val defaultExportFolderUriFlow: Flow<String?> = context.dataStore.data.map { prefs ->
     prefs[PrefKeys.EXPORT_FOLDER_URI]?.ifEmpty { null }
   }
+
+  /** Recently used custom subtitle colours (most recent first), as opaque 0xFFRRGGBB values. */
+  val customTextColorsFlow: Flow<List<Long>> = context.dataStore.data.map { prefs ->
+    parseCustomColors(prefs[PrefKeys.CUSTOM_TEXT_COLORS])
+  }
+
+  /** Remembers a custom colour at the front of the list. Keeps only the latest few. */
+  suspend fun addCustomTextColor(color: Long) {
+    context.dataStore.edit { prefs ->
+      val updated = (listOf(color) + parseCustomColors(prefs[PrefKeys.CUSTOM_TEXT_COLORS]))
+        .distinct()
+        .take(MAX_CUSTOM_COLORS)
+      prefs[PrefKeys.CUSTOM_TEXT_COLORS] = updated.joinToString(",")
+    }
+  }
+
+  private fun parseCustomColors(raw: String?): List<Long> =
+    raw.orEmpty()
+      .split(',')
+      .mapNotNull { it.trim().toLongOrNull() }
+      .filter { it in 0xFF000000L..0xFFFFFFFFL }
 
   suspend fun saveDefaultAppearance(appearance: SubtitleAppearance) {
     context.dataStore.edit { prefs ->
