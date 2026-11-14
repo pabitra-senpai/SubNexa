@@ -4,6 +4,7 @@ package com.subnexa.app.domain.embedded
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.DataReader
 import androidx.media3.common.Format
@@ -43,6 +44,7 @@ import java.io.EOFException
  */
 object EmbeddedSubtitleExtractor {
 
+  private const val TAG = "SubNexaEmbedded"
   private const val SCAN_TIMEOUT_MS = 20_000L
   private const val PROGRESS_INTERVAL_MS = 150L
 
@@ -55,10 +57,18 @@ object EmbeddedSubtitleExtractor {
         }
       } catch (e: CancellationException) {
         throw e
-      } catch (_: Exception) {
+      } catch (e: Exception) {
         // Unreadable container: behave as "no subtitle tracks".
+        Log.w(TAG, "Could not scan video for subtitle tracks", e)
       }
-      collector.buildTrackList()
+      val tracks = collector.buildTrackList()
+      Log.i(
+        TAG,
+        "Scan finished: ${collector.formats.size} track(s) seen, " +
+          "${tracks.size} subtitle track(s): " +
+          tracks.joinToString { "${it.languageCode}/${it.mimeType}" }
+      )
+      tracks
     }
 
   /**
@@ -130,9 +140,19 @@ object EmbeddedSubtitleExtractor {
     }
   }
 
+  /**
+   * By default Media3 converts text tracks to its internal "media3 cues" format while extracting.
+   * We need the original SRT / ASS / WebVTT / tx3g samples, so transcoding must be switched off.
+   */
+  @Suppress("DEPRECATION")
+  private fun createRawExtractors(): Array<Extractor> =
+    DefaultExtractorsFactory()
+      .setTextTrackTranscodingEnabled(false)
+      .createExtractors()
+
   private fun selectExtractor(input: ExtractorInput): Extractor? {
     var chosen: Extractor? = null
-    for (candidate in DefaultExtractorsFactory().createExtractors()) {
+    for (candidate in createRawExtractors()) {
       if (chosen == null) {
         try {
           if (candidate.sniff(input)) chosen = candidate
