@@ -83,6 +83,7 @@ fun HomeScreen(
 ) {
   val summaries by viewModel.summaries.collectAsStateWithLifecycle()
   val snackbarHostState = remember { SnackbarHostState() }
+  val embeddedState by viewModel.embeddedState.collectAsStateWithLifecycle()
 
   // File pickers
   val videoPickerLauncher = rememberLauncherForActivityResult(
@@ -101,6 +102,17 @@ fun HomeScreen(
     }
   }
 
+  // Subtitle file picker used when the video also has embedded tracks but the user prefers a file
+  val subtitleForVideoLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument()
+  ) { uri: Uri? ->
+    if (uri != null) {
+      viewModel.onSubtitleFileForVideoSelected(uri)
+    } else {
+      viewModel.onSubtitleFileForVideoCancelled()
+    }
+  }
+
   LaunchedEffect(Unit) {
     viewModel.events.collectLatest { event ->
       when (event) {
@@ -110,6 +122,9 @@ fun HomeScreen(
         is HomeEvent.PromptPickVideoForSubtitle -> {
           // Open video picker to select the matching video
           videoPickerLauncher.launch(arrayOf("video/*"))
+        }
+        is HomeEvent.PickSubtitleFileForVideo -> {
+          subtitleForVideoLauncher.launch(arrayOf("*/*"))
         }
         is HomeEvent.ShowSnackbar -> {
           val result = snackbarHostState.showSnackbar(
@@ -321,6 +336,16 @@ fun HomeScreen(
       }
     }
   }
+
+  EmbeddedSubtitleDialogs(
+    state = embeddedState,
+    onUseVideoSubtitles = viewModel::chooseUseVideoSubtitles,
+    onImportFile = viewModel::chooseImportSubtitleFile,
+    onDismiss = viewModel::dismissEmbeddedFlow,
+    onBackToChoice = viewModel::backToChoice,
+    onSelectTrack = viewModel::selectEmbeddedTrack,
+    onCancelLoading = viewModel::cancelEmbeddedLoading
+  )
 }
 
 @Composable
