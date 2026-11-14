@@ -8,6 +8,7 @@ import com.subnexa.app.domain.model.ProjectSummary
 import com.subnexa.app.domain.model.SubtitleAppearance
 import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.model.SubtitlePosition
+import com.subnexa.app.domain.model.subtitleSourceLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,22 +55,48 @@ class ProjectRepository(private val context: Context) {
       val jsonStr = indexFile.readText()
       val jsonArray = JSONArray(jsonStr)
       val list = mutableListOf<ProjectSummary>()
+      var migrated = false
       for (i in 0 until jsonArray.length()) {
         val obj = jsonArray.getJSONObject(i)
-        list.add(
-          ProjectSummary(
-            id = obj.getString("id"),
-            videoName = obj.getString("videoName"),
-            subtitleCount = obj.getInt("subtitleCount"),
-            lastEditedTimeMs = obj.getLong("lastEditedTimeMs")
-          )
+        var summary = ProjectSummary(
+          id = obj.getString("id"),
+          videoName = obj.getString("videoName"),
+          subtitleCount = obj.getInt("subtitleCount"),
+          lastEditedTimeMs = obj.getLong("lastEditedTimeMs"),
+          videoUri = obj.optString("videoUri", ""),
+          sourceLabel = if (obj.has("sourceLabel") && !obj.isNull("sourceLabel")) obj.getString("sourceLabel") else null
         )
+        // Index files written by older versions have no videoUri / sourceLabel: fill them in once
+        // from the project file itself.
+        if (!obj.has("videoUri")) {
+          summary = fillMissingSummaryFields(summary)
+          migrated = true
+        }
+        list.add(summary)
       }
       // Sort by last edited descending
-      _summariesFlow.value = list.sortedByDescending { it.lastEditedTimeMs }
+      val sorted = list.sortedByDescending { it.lastEditedTimeMs }
+      _summariesFlow.value = sorted
+      if (migrated) saveSummaries(sorted)
     } catch (e: Exception) {
       Log.e(TAG, "Failed to load summaries from index.json", e)
       _summariesFlow.value = emptyList()
+    }
+  }
+
+  private fun fillMissingSummaryFields(summary: ProjectSummary): ProjectSummary {
+    return try {
+      val file = File(projectsDir, "${summary.id}.json")
+      if (!file.exists()) return summary
+      val root = JSONObject(file.readText())
+      val subtitleName = if (root.has("subtitleName") && !root.isNull("subtitleName")) root.getString("subtitleName") else null
+      summary.copy(
+        videoUri = root.optString("videoUri", ""),
+        sourceLabel = subtitleSourceLabel(subtitleName, summary.subtitleCount)
+      )
+    } catch (e: Exception) {
+      Log.w(TAG, "Could not read project ${summary.id} to complete its summary", e)
+      summary
     }
   }
 
@@ -123,6 +150,8 @@ class ProjectRepository(private val context: Context) {
           put("videoName", summary.videoName)
           put("subtitleCount", summary.subtitleCount)
           put("lastEditedTimeMs", summary.lastEditedTimeMs)
+          put("videoUri", summary.videoUri)
+          put("sourceLabel", summary.sourceLabel)
         }
         jsonArray.put(obj)
       }
@@ -271,7 +300,9 @@ class ProjectRepository(private val context: Context) {
           id = project.id,
           videoName = project.videoName,
           subtitleCount = project.entries.size,
-          lastEditedTimeMs = project.lastEditedTimeMs
+          lastEditedTimeMs = project.lastEditedTimeMs,
+          videoUri = project.videoUri,
+          sourceLabel = subtitleSourceLabel(project.subtitleName, project.entries.size)
         )
       )
       val sorted = currentSummaries.sortedByDescending { it.lastEditedTimeMs }
@@ -296,6 +327,12 @@ class ProjectRepository(private val context: Context) {
       Log.e(TAG, "Failed to delete project $projectId", e)
     }
     project
+  }
+
+  /** Changes the display name of a project. Does not change its "last edited" time. */
+  suspend fun renameProject(projectId: String, newName: String) = withContext(Dispatchers.IO) {
+    val project = getProject(projectId) ?: return@withContext
+    saveProject(project.copy(videoName = newName))
   }
 
   suspend fun restoreProject(project: Project) = withContext(Dispatchers.IO) {
