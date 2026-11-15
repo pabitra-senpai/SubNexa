@@ -1,9 +1,14 @@
 package com.subnexa.app.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +25,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,6 +44,24 @@ import com.subnexa.app.ui.theme.SurfaceVariant
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 
+/** Light press feedback: the element shrinks very slightly while it is held down. */
+@Composable
+fun Modifier.pressScale(
+  interactionSource: MutableInteractionSource,
+  pressedScale: Float = 0.97f
+): Modifier {
+  val isPressed by interactionSource.collectIsPressedAsState()
+  val scale by animateFloatAsState(
+    targetValue = if (isPressed) pressedScale else 1f,
+    animationSpec = tween(90),
+    label = "press_scale"
+  )
+  return graphicsLayer {
+    scaleX = scale
+    scaleY = scale
+  }
+}
+
 @Composable
 fun PrimaryAccentButton(
   text: String,
@@ -44,11 +70,13 @@ fun PrimaryAccentButton(
   enabled: Boolean = true,
   testTag: String = "primary_button"
 ) {
+  val interactionSource = remember { MutableInteractionSource() }
   Button(
     onClick = onClick,
     enabled = enabled,
     modifier = modifier
       .defaultMinSize(minHeight = 48.dp)
+      .pressScale(interactionSource)
       .testTag(testTag),
     shape = RoundedCornerShape(10.dp),
     colors = ButtonDefaults.buttonColors(
@@ -57,7 +85,8 @@ fun PrimaryAccentButton(
       disabledContainerColor = Accent.copy(alpha = 0.4f),
       disabledContentColor = TextPrimary.copy(alpha = 0.5f)
     ),
-    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+    interactionSource = interactionSource
   ) {
     Text(
       text = text,
@@ -77,11 +106,13 @@ fun SecondarySubNexaButton(
   enabled: Boolean = true,
   testTag: String = "secondary_button"
 ) {
+  val interactionSource = remember { MutableInteractionSource() }
   OutlinedButton(
     onClick = onClick,
     enabled = enabled,
     modifier = modifier
       .defaultMinSize(minHeight = 48.dp)
+      .pressScale(interactionSource)
       .testTag(testTag),
     shape = RoundedCornerShape(10.dp),
     border = BorderStroke(0.5.dp, Border),
@@ -91,7 +122,8 @@ fun SecondarySubNexaButton(
       disabledContainerColor = Surface.copy(alpha = 0.5f),
       disabledContentColor = TextSecondary.copy(alpha = 0.5f)
     ),
-    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+    interactionSource = interactionSource
   ) {
     Text(
       text = text,
@@ -149,11 +181,21 @@ fun <T> SegmentedControl(
   ) {
     items.forEach { item ->
       val isSelected = item == selectedItem
+      val segmentColor by animateColorAsState(
+        targetValue = if (isSelected) Accent else Accent.copy(alpha = 0f),
+        animationSpec = tween(150),
+        label = "segment_background"
+      )
+      val segmentTextColor by animateColorAsState(
+        targetValue = if (isSelected) TextPrimary else TextSecondary,
+        animationSpec = tween(150),
+        label = "segment_text"
+      )
       Box(
         modifier = Modifier
           .weight(1f)
           .clip(RoundedCornerShape(6.dp))
-          .background(if (isSelected) Accent else Color.Transparent)
+          .background(segmentColor)
           .clickable { onItemSelected(item) }
           .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
@@ -161,7 +203,7 @@ fun <T> SegmentedControl(
         Text(
           text = label(item),
           style = MaterialTheme.typography.labelLarge.copy(
-            color = if (isSelected) TextPrimary else TextSecondary,
+            color = segmentTextColor,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 13.sp
           ),
