@@ -121,4 +121,70 @@ class SubtitleEditingTest {
     assertEquals(0L to 500L, SubtitleEditing.nudgeBoth(e, -500))
     assertEquals(400L to 900L, SubtitleEditing.nudgeBoth(e, 100))
   }
+
+  @Test
+  fun removeDuplicates_keepsFirstOfEachIdenticalPair() {
+    val result = SubtitleEditing.removeDuplicates(
+      listOf(
+        entry(1, 324, 3744, "i realise the screaming pain"),
+        entry(2, 324, 3744, "i realise the screaming pain"),
+        entry(3, 3874, 7044, "hearing loud in my brain"),
+        entry(4, 3874, 7044, "hearing loud in my brain")
+      )
+    )
+    assertEquals(2, result.removedCount)
+    assertEquals(listOf(1L, 3L), result.entries.map { it.id })
+  }
+
+  @Test
+  fun removeDuplicates_ignoresSpacingDifferencesInText() {
+    val result = SubtitleEditing.removeDuplicates(
+      listOf(entry(1, 0, 1000, "Hello  world"), entry(2, 0, 1000, " Hello world\n"))
+    )
+    assertEquals(1, result.removedCount)
+    assertEquals(listOf(1L), result.entries.map { it.id })
+  }
+
+  @Test
+  fun removeDuplicates_keepsSameTextAtDifferentTimes() {
+    val entries = listOf(entry(1, 0, 1000, "Yes"), entry(2, 2000, 3000, "Yes"))
+    val result = SubtitleEditing.removeDuplicates(entries)
+    assertEquals(0, result.removedCount)
+    assertEquals(entries, result.entries)
+  }
+
+  @Test
+  fun removeDuplicates_keepsSameTimeWithDifferentText() {
+    val entries = listOf(entry(1, 0, 1000, "Top line"), entry(2, 0, 1000, "Bottom line"))
+    val result = SubtitleEditing.removeDuplicates(entries)
+    assertEquals(0, result.removedCount)
+    assertEquals(entries, result.entries)
+  }
+
+  @Test
+  fun removeDuplicates_keepsSameStartWhenEndDiffers() {
+    val entries = listOf(entry(1, 0, 1000, "Hi"), entry(2, 0, 1500, "Hi"))
+    assertEquals(0, SubtitleEditing.removeDuplicates(entries).removedCount)
+  }
+
+  @Test
+  fun removeDuplicates_handlesThreeCopiesAndKeepsOrder() {
+    val result = SubtitleEditing.removeDuplicates(
+      listOf(
+        entry(1, 0, 1000, "A"),
+        entry(2, 2000, 3000, "B"),
+        entry(3, 0, 1000, "A"),
+        entry(4, 0, 1000, "A")
+      )
+    )
+    assertEquals(2, result.removedCount)
+    assertEquals(listOf(1L, 2L), result.entries.map { it.id })
+  }
+
+  @Test
+  fun removeDuplicates_emptyList() {
+    val result = SubtitleEditing.removeDuplicates(emptyList())
+    assertEquals(0, result.removedCount)
+    assertEquals(emptyList<SubtitleEntry>(), result.entries)
+  }
 }
