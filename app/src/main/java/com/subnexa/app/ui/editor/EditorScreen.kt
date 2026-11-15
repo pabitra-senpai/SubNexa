@@ -5,69 +5,32 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Redo
-import androidx.compose.material.icons.automirrored.outlined.Undo
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.CallSplit
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FileUpload
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.Merge
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,35 +42,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.search.SubtitleSearch
-import com.subnexa.app.domain.validation.IssueType
 import com.subnexa.app.domain.validation.SubtitleIssues
-import com.subnexa.app.domain.parser.TimeUtils
-import com.subnexa.app.ui.components.HairlineCard
-import com.subnexa.app.ui.components.PrimaryAccentButton
-import com.subnexa.app.ui.components.pressScale
 import com.subnexa.app.ui.theme.Accent
-import com.subnexa.app.ui.theme.ActiveRowTint
 import com.subnexa.app.ui.theme.Background
-import com.subnexa.app.ui.theme.Border
-import com.subnexa.app.ui.theme.MonospaceTimestampStyle
-import com.subnexa.app.ui.theme.Surface
-import com.subnexa.app.ui.theme.SurfaceVariant
-import com.subnexa.app.ui.theme.SwatchYellow
-import com.subnexa.app.ui.theme.TextMuted
-import com.subnexa.app.ui.theme.TextPrimary
-import com.subnexa.app.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -234,75 +175,17 @@ fun EditorScreen(
       snackbarHost = { SnackbarHost(snackbarHostState) },
       topBar = {
         // 1. Compact Top Bar: back arrow and video name
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          IconButton(
-            onClick = {
-              viewModel.saveCurrentStateToDisk()
-              onNavigateBack()
-            },
-            modifier = Modifier.size(40.dp).testTag("editor_back_button")
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-              contentDescription = "Back",
-              tint = TextPrimary
-            )
-          }
-
-          Spacer(modifier = Modifier.width(8.dp))
-
-          Text(
-            text = uiState.project?.videoName ?: "Video Editor",
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontWeight = FontWeight.SemiBold,
-              fontSize = 16.sp
-            ),
-            color = TextPrimary,
-            maxLines = 1,
-            modifier = Modifier.weight(1f)
-          )
-
-          val undoTint by animateColorAsState(
-            targetValue = if (uiState.canUndo) TextPrimary else TextMuted.copy(alpha = 0.5f),
-            animationSpec = tween(150),
-            label = "undo_tint"
-          )
-          val redoTint by animateColorAsState(
-            targetValue = if (uiState.canRedo) TextPrimary else TextMuted.copy(alpha = 0.5f),
-            animationSpec = tween(150),
-            label = "redo_tint"
-          )
-
-          IconButton(
-            onClick = { viewModel.undo() },
-            enabled = uiState.canUndo,
-            modifier = Modifier.size(40.dp).testTag("editor_undo_button")
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.Undo,
-              contentDescription = "Undo",
-              tint = undoTint
-            )
-          }
-
-          IconButton(
-            onClick = { viewModel.redo() },
-            enabled = uiState.canRedo,
-            modifier = Modifier.size(40.dp).testTag("editor_redo_button")
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.Redo,
-              contentDescription = "Redo",
-              tint = redoTint
-            )
-          }
-        }
+        EditorTopBar(
+          title = uiState.project?.videoName ?: "Video Editor",
+          canUndo = uiState.canUndo,
+          canRedo = uiState.canRedo,
+          onBack = {
+            viewModel.saveCurrentStateToDisk()
+            onNavigateBack()
+          },
+          onUndo = { viewModel.undo() },
+          onRedo = { viewModel.redo() }
+        )
       }
     ) { innerPadding ->
       if (uiState.isLoading) {
@@ -341,57 +224,14 @@ fun EditorScreen(
           )
 
           // 3. Four Equal Actions Row: Import, Add, Sync, Export
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .background(Surface)
-              .border(0.5.dp, Border)
-              .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            EditorActionButton(
-              icon = Icons.Outlined.FileUpload,
-              label = "Import",
-              onClick = {
-                importSubtitleLauncher.launch(arrayOf("*/*"))
-              },
-              modifier = Modifier.weight(1f),
-              testTag = "action_import"
-            )
-
-            EditorActionButton(
-              icon = Icons.Outlined.Add,
-              label = "Add",
-              onClick = {
-                viewModel.openSheet(
-                  EditorSheetState.Edit(entry = null, isNew = true)
-                )
-              },
-              modifier = Modifier.weight(1f),
-              testTag = "action_add"
-            )
-
-            EditorActionButton(
-              icon = Icons.Outlined.Sync,
-              label = "Sync",
-              onClick = {
-                viewModel.openSheet(EditorSheetState.GlobalSync)
-              },
-              modifier = Modifier.weight(1f),
-              testTag = "action_sync"
-            )
-
-            EditorActionButton(
-              icon = Icons.Outlined.FileDownload,
-              label = "Export",
-              onClick = {
-                viewModel.openSheet(EditorSheetState.Export)
-              },
-              modifier = Modifier.weight(1f),
-              testTag = "action_export"
-            )
-          }
+          EditorActionsRow(
+            onImport = { importSubtitleLauncher.launch(arrayOf("*/*")) },
+            onAdd = {
+              viewModel.openSheet(EditorSheetState.Edit(entry = null, isNew = true))
+            },
+            onSync = { viewModel.openSheet(EditorSheetState.GlobalSync) },
+            onExport = { viewModel.openSheet(EditorSheetState.Export) }
+          )
 
           // 4. Subtitle List Area
           val entries = uiState.project?.entries ?: emptyList()
@@ -410,61 +250,22 @@ fun EditorScreen(
           )
 
           // Count header with problem chip, nudge toggle and find toggle
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = "${entries.size} subtitles",
-              style = MaterialTheme.typography.labelLarge.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp
-              ),
-              color = TextSecondary
-            )
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              if (issueIndexes.isNotEmpty()) {
-                IssueChip(
-                  count = issueIndexes.size,
-                  onClick = {
-                    // Each tap moves on to the next problem below the first visible line.
-                    val reference = listState.firstVisibleItemIndex
-                    val target = issueIndexes.firstOrNull { it > reference } ?: issueIndexes.first()
-                    uiScope.launch { listState.animateScrollToItem(target) }
-                  }
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-              }
-
-              IconButton(
-                onClick = { showNudge = !showNudge },
-                modifier = Modifier.size(40.dp).testTag("toggle_nudge_button")
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Tune,
-                  contentDescription = "Nudge timing",
-                  tint = if (showNudge) Accent else TextSecondary
-                )
-              }
-
-              IconButton(
-                onClick = {
-                  if (search.isOpen) viewModel.closeSearch() else viewModel.openSearch()
-                },
-                modifier = Modifier.size(40.dp).testTag("toggle_search_button")
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Search,
-                  contentDescription = "Find and replace",
-                  tint = if (search.isOpen) Accent else TextSecondary
-                )
-              }
+          SubtitleListHeader(
+            subtitleCount = entries.size,
+            issueCount = issueIndexes.size,
+            showNudge = showNudge,
+            searchOpen = search.isOpen,
+            onIssueClick = {
+              // Each tap moves on to the next problem below the first visible line.
+              val reference = listState.firstVisibleItemIndex
+              val target = issueIndexes.firstOrNull { it > reference } ?: issueIndexes.first()
+              uiScope.launch { listState.animateScrollToItem(target) }
+            },
+            onToggleNudge = { showNudge = !showNudge },
+            onToggleSearch = {
+              if (search.isOpen) viewModel.closeSearch() else viewModel.openSearch()
             }
-          }
+          )
 
           AnimatedVisibility(
             visible = search.isOpen,
@@ -512,37 +313,11 @@ fun EditorScreen(
                 .padding(24.dp),
               contentAlignment = Alignment.Center
             ) {
-              Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Subtitles,
-                  contentDescription = null,
-                  tint = TextMuted,
-                  modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                  text = "No subtitles yet",
-                  style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                  color = TextPrimary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  text = "Pause the video where a line starts, then add it.",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = TextMuted
-                )
-                Spacer(modifier = Modifier.height(18.dp))
-                PrimaryAccentButton(
-                  text = "Add your first subtitle",
-                  onClick = {
-                    viewModel.openSheet(EditorSheetState.Edit(entry = null, isNew = true))
-                  },
-                  testTag = "add_first_subtitle_button"
-                )
-              }
+              EmptySubtitlesContent(
+                onAddFirst = {
+                  viewModel.openSheet(EditorSheetState.Edit(entry = null, isNew = true))
+                }
+              )
             }
           } else {
             LazyColumn(
@@ -595,359 +370,9 @@ fun EditorScreen(
   }
 
   // Bottom Sheets
-  when (val sheet = uiState.sheetState) {
-    is EditorSheetState.None -> Unit
-
-    is EditorSheetState.Edit -> {
-      EditSubtitleBottomSheet(
-        entry = sheet.entry,
-        isNew = sheet.isNew,
-        currentPlayheadMs = uiState.currentPositionMs,
-        isPlaying = uiState.isPlaying,
-        allEntries = uiState.project?.entries ?: emptyList(),
-        onTogglePlayPause = { viewModel.togglePlayPause() },
-        onDismiss = { viewModel.closeSheet() },
-        onSave = { startMs, endMs, text ->
-          if (sheet.isNew || sheet.entry == null) {
-            viewModel.addSubtitle(startMs, endMs, text)
-          } else {
-            viewModel.updateSubtitle(sheet.entry.id, startMs, endMs, text)
-          }
-        }
-      )
-    }
-
-    is EditorSheetState.GlobalSync -> {
-      GlobalSyncBottomSheet(
-        entries = uiState.project?.entries ?: emptyList(),
-        playbackPositionFlow = viewModel.playbackPositionMs,
-        isPlaying = uiState.isPlaying,
-        onTogglePlayPause = { viewModel.togglePlayPause() },
-        onDismiss = { viewModel.closeSheet() },
-        onApply = { offsetSeconds ->
-          viewModel.applyGlobalSync(offsetSeconds)
-        },
-        onApplyTwoPoint = { firstId, firstMs, lastId, lastMs ->
-          viewModel.applyTwoPointSync(firstId, firstMs, lastId, lastMs)
-        }
-      )
-    }
-
-    is EditorSheetState.Export -> {
-      ExportBottomSheet(
-        initialFilename = uiState.project?.videoName ?: "Subtitles",
-        defaultFormat = uiState.defaultExportFormat,
-        defaultFolderUriStr = uiState.defaultExportFolderUri,
-        onDismiss = { viewModel.closeSheet() },
-        onPickFolder = { folderPickerLauncher.launch(null) },
-        onExport = { filename, format, folderUriStr ->
-          viewModel.exportSubtitles(filename, format, folderUriStr)
-        }
-      )
-    }
-
-    is EditorSheetState.Appearance -> {
-      val entries = uiState.project?.entries
-      val subtitleInfo = androidx.compose.runtime.remember(entries) {
-        com.subnexa.app.domain.font.SubtitleLanguageInfo.from(entries?.map { it.text } ?: emptyList())
-      }
-      AppearanceBottomSheet(
-        initialAppearance = uiState.project?.appearance ?: com.subnexa.app.domain.model.SubtitleAppearance(),
-        subtitleInfo = subtitleInfo,
-        onDismiss = { viewModel.closeSheet() },
-        onAppearanceChanged = { newAppearance ->
-          viewModel.updateAppearance(newAppearance)
-        }
-      )
-    }
-  }
-}
-
-@Composable
-private fun EditorActionButton(
-  icon: androidx.compose.ui.graphics.vector.ImageVector,
-  label: String,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-  testTag: String
-) {
-  val interactionSource = remember { MutableInteractionSource() }
-  Box(
-    modifier = modifier
-      .pressScale(interactionSource)
-      .clip(RoundedCornerShape(8.dp))
-      .clickable(
-        interactionSource = interactionSource,
-        indication = LocalIndication.current,
-        onClick = onClick
-      )
-      .padding(vertical = 8.dp)
-      .testTag(testTag),
-    contentAlignment = Alignment.Center
-  ) {
-    Column(
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.Center
-    ) {
-      Icon(
-        imageVector = icon,
-        contentDescription = label,
-        tint = TextPrimary,
-        modifier = Modifier.size(20.dp)
-      )
-      Spacer(modifier = Modifier.height(3.dp))
-      Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall.copy(
-          fontWeight = FontWeight.Medium,
-          fontSize = 11.5.sp
-        ),
-        color = TextSecondary
-      )
-    }
-  }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SubtitleRowItem(
-  index: Int,
-  entry: SubtitleEntry,
-  isActive: Boolean,
-  onSeek: () -> Unit,
-  onEdit: () -> Unit,
-  onDelete: () -> Unit,
-  onDuplicate: () -> Unit,
-  onSplitAtPlayhead: () -> Unit,
-  onMergeWithNext: () -> Unit,
-  issues: List<IssueType> = emptyList(),
-  highlight: String = "",
-  highlightIgnoreCase: Boolean = true,
-  isCurrentMatch: Boolean = false,
-  modifier: Modifier = Modifier
-) {
-  var showMenu by remember { mutableStateOf(false) }
-
-  val rowBackground by animateColorAsState(
-    targetValue = if (isActive) ActiveRowTint else ActiveRowTint.copy(alpha = 0f),
-    animationSpec = tween(150),
-    label = "row_background"
+  EditorSheetHost(
+    uiState = uiState,
+    viewModel = viewModel,
+    onPickFolder = { folderPickerLauncher.launch(null) }
   )
-  val indicatorColor by animateColorAsState(
-    targetValue = if (isActive) Accent else Accent.copy(alpha = 0f),
-    animationSpec = tween(150),
-    label = "row_indicator"
-  )
-  val indexColor by animateColorAsState(
-    targetValue = if (isActive) Accent else TextMuted,
-    animationSpec = tween(150),
-    label = "row_index"
-  )
-  val timeColor by animateColorAsState(
-    targetValue = if (isActive) Accent else TextSecondary,
-    animationSpec = tween(150),
-    label = "row_time"
-  )
-  val highlightColor = SwatchYellow.copy(alpha = 0.35f)
-  val displayText = remember(entry.text, highlight, highlightIgnoreCase) {
-    buildHighlightedText(entry.text, highlight, highlightIgnoreCase, highlightColor)
-  }
-
-  Box(
-    modifier = modifier
-      .fillMaxWidth()
-      .background(rowBackground)
-      .then(if (isCurrentMatch) Modifier.border(1.dp, Accent.copy(alpha = 0.8f)) else Modifier)
-      .combinedClickable(
-        onClick = onSeek,
-        onLongClick = { showMenu = true }
-      )
-      .padding(horizontal = 16.dp, vertical = 10.dp)
-      .testTag("subtitle_row_$index")
-  ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      // Red left indicator line for active row
-      Box(
-        modifier = Modifier
-          .width(3.dp)
-          .height(36.dp)
-          .background(indicatorColor)
-      )
-
-      Spacer(modifier = Modifier.width(10.dp))
-
-      // 1-based index number
-      Text(
-        text = "$index",
-        style = MonospaceTimestampStyle.copy(
-          color = indexColor,
-          fontWeight = FontWeight.Bold,
-          fontSize = 12.sp
-        ),
-        modifier = Modifier.width(36.dp)
-      )
-
-      // Content: text + timestamps
-      Column(
-        modifier = Modifier.weight(1f)
-      ) {
-        Text(
-          text = displayText,
-          style = MaterialTheme.typography.bodyMedium.copy(
-            color = if (isActive) TextPrimary else TextPrimary.copy(alpha = 0.9f),
-            fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal,
-            fontSize = 14.sp
-          ),
-          maxLines = 2
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-          text = "${TimeUtils.formatTimestamp(entry.startMs, '.')}  →  ${TimeUtils.formatTimestamp(entry.endMs, '.')}",
-          style = MonospaceTimestampStyle.copy(
-            color = timeColor,
-            fontSize = 11.5.sp
-          )
-        )
-        if (issues.isNotEmpty()) {
-          Spacer(modifier = Modifier.height(3.dp))
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              imageVector = Icons.Outlined.WarningAmber,
-              contentDescription = null,
-              tint = SwatchYellow,
-              modifier = Modifier.size(12.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-              text = issues.joinToString("  ·  ") { it.label },
-              style = MaterialTheme.typography.bodySmall.copy(
-                color = SwatchYellow,
-                fontSize = 11.sp
-              )
-            )
-          }
-        }
-      }
-
-      // Actions: Edit and Delete
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-          onClick = onEdit,
-          modifier = Modifier.size(36.dp).testTag("edit_subtitle_$index")
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Edit,
-            contentDescription = "Edit",
-            tint = TextSecondary,
-            modifier = Modifier.size(18.dp)
-          )
-        }
-
-        IconButton(
-          onClick = onDelete,
-          modifier = Modifier.size(36.dp).testTag("delete_subtitle_$index")
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Delete,
-            contentDescription = "Delete",
-            tint = TextMuted,
-            modifier = Modifier.size(18.dp)
-          )
-        }
-      }
-    }
-
-    // Long press dropdown menu: Duplicate, Split, Merge
-    DropdownMenu(
-      expanded = showMenu,
-      onDismissRequest = { showMenu = false },
-      modifier = Modifier
-        .background(Surface)
-        .border(0.5.dp, Border, RoundedCornerShape(8.dp))
-    ) {
-      DropdownMenuItem(
-        text = { Text("Duplicate", color = TextPrimary) },
-        leadingIcon = {
-          Icon(Icons.Outlined.ContentCopy, contentDescription = null, tint = Accent)
-        },
-        onClick = {
-          showMenu = false
-          onDuplicate()
-        }
-      )
-      DropdownMenuItem(
-        text = { Text("Split at playhead", color = TextPrimary) },
-        leadingIcon = {
-          Icon(Icons.Outlined.CallSplit, contentDescription = null, tint = Accent)
-        },
-        onClick = {
-          showMenu = false
-          onSplitAtPlayhead()
-        }
-      )
-      DropdownMenuItem(
-        text = { Text("Merge with next", color = TextPrimary) },
-        leadingIcon = {
-          Icon(Icons.Outlined.Merge, contentDescription = null, tint = Accent)
-        },
-        onClick = {
-          showMenu = false
-          onMergeWithNext()
-        }
-      )
-    }
-  }
-}
-
-@Composable
-private fun IssueChip(count: Int, onClick: () -> Unit) {
-  val shape = RoundedCornerShape(14.dp)
-  Row(
-    modifier = Modifier
-      .clip(shape)
-      .background(SwatchYellow.copy(alpha = 0.14f))
-      .border(0.5.dp, SwatchYellow.copy(alpha = 0.5f), shape)
-      .clickable(onClick = onClick)
-      .padding(horizontal = 10.dp, vertical = 5.dp)
-      .testTag("issues_chip"),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    Icon(
-      imageVector = Icons.Outlined.WarningAmber,
-      contentDescription = null,
-      tint = SwatchYellow,
-      modifier = Modifier.size(14.dp)
-    )
-    Spacer(modifier = Modifier.width(4.dp))
-    Text(
-      text = if (count == 1) "1 problem" else "$count problems",
-      style = MaterialTheme.typography.labelMedium.copy(
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold
-      ),
-      color = SwatchYellow
-    )
-  }
-}
-
-private fun buildHighlightedText(
-  text: String,
-  query: String,
-  ignoreCase: Boolean,
-  color: Color
-): AnnotatedString {
-  if (query.isEmpty()) return AnnotatedString(text)
-  return buildAnnotatedString {
-    append(text)
-    var from = 0
-    while (true) {
-      val at = text.indexOf(query, from, ignoreCase)
-      if (at < 0) break
-      addStyle(SpanStyle(background = color), at, at + query.length)
-      from = at + query.length
-    }
-  }
 }

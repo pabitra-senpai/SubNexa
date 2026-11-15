@@ -11,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.subnexa.app.data.ProjectRepository
 import com.subnexa.app.data.SettingsRepository
+import com.subnexa.app.domain.edit.SubtitleEditing
 import com.subnexa.app.domain.exporter.SubtitleExporter
 import com.subnexa.app.domain.model.ExportFormat
 import com.subnexa.app.domain.model.Project
@@ -39,51 +40,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-
-sealed interface EditorSheetState {
-  data object None : EditorSheetState
-  data class Edit(val entry: SubtitleEntry?, val isNew: Boolean) : EditorSheetState
-  data object GlobalSync : EditorSheetState
-  data object Export : EditorSheetState
-  data object Appearance : EditorSheetState
-}
-
-enum class NudgeMode { START, END, BOTH }
-
-data class SearchState(
-  val isOpen: Boolean = false,
-  val query: String = "",
-  val replacement: String = "",
-  val matchCase: Boolean = false,
-  val showReplace: Boolean = false,
-  /** Position inside the list of matching lines (0-based). */
-  val currentIndex: Int = 0
-)
-
-sealed interface EditorEvent {
-  data class ShowSnackbar(val message: String, val actionLabel: String? = null, val onAction: (() -> Unit)? = null) : EditorEvent
-  data class ScrollToIndex(val index: Int) : EditorEvent
-  data object OpenExportFolderPicker : EditorEvent
-}
-
-data class EditorUiState(
-  val isLoading: Boolean = true,
-  val project: Project? = null,
-  val isPlaying: Boolean = false,
-  val currentPositionMs: Long = 0L,
-  val durationMs: Long = 0L,
-  val playbackSpeed: Float = 1.0f,
-  val activeEntry: SubtitleEntry? = null,
-  val activeIndex: Int = -1,
-  val sheetState: EditorSheetState = EditorSheetState.None,
-  val isFullscreen: Boolean = false,
-  val defaultExportFolderUri: String? = null,
-  val defaultExportFormat: ExportFormat = ExportFormat.SRT,
-  val playerError: String? = null,
-  val canUndo: Boolean = false,
-  val canRedo: Boolean = false,
-  val search: SearchState = SearchState()
-)
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -115,8 +71,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private val idGenerator = AtomicLong(1000L)
   private var lastNudgeId: Long? = null
   private var lastNudgeAtMs: Long = 0L
-  private val undoStack = ArrayDeque<EditSnapshot>()
-  private val redoStack = ArrayDeque<EditSnapshot>()
+  private val history = EditHistory(MAX_HISTORY)
 
   private val speedCycle = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
@@ -452,15 +407,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   fun duplicateSubtitle(entry: SubtitleEntry) {
     val project = _uiState.value.project ?: return
     recordUndo(project)
-    val duration = (entry.endMs - entry.startMs).coerceAtLeast(500L)
-    val newStart = entry.endMs + 50L
-    val newEnd = newStart + duration
-    val duplicated = SubtitleEntry(
-      id = idGenerator.getAndIncrement(),
-      startMs = newStart,
-      endMs = newEnd,
-      text = entry.text
-    )
+    val duplicated = SubtitleEditing.duplicate(entry, newId = idGenerator.getAndIncrement())
     val updatedEntries = (project.entries + duplicated).sortedBy { it.startMs }
     val updatedProject = project.copy(
       entries = updatedEntries,
@@ -489,17 +436,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     val project = _uiState.value.project ?: return
     recordUndo(project)
-    val words = entry.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-    val midWordIndex = (words.size / 2).coerceAtLeast(1)
-    val firstText = words.take(midWordIndex).joinToString(" ").ifEmpty { entry.text.trim() }
-    val secondText = words.drop(midWordIndex).joinToString(" ").ifEmpty { "..." }
-
-    val firstHalf = entry.copy(endMs = playhead, text = firstText)
-    val secondHalf = SubtitleEntry(
-      id = idGenerator.getAndIncrement(),
-      startMs = playhead,
-      endMs = entry.endMs,
-      text = secondText
+    val (firstHalf, secondHalf) = SubtitleEditing.split(
+      entry = entry,
+      playheadMs = playhead,
+      newId = idGenerator.getAndIncrement()
     )
 
     val updatedEntries = project.entries.map {
@@ -528,10 +468,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     recordUndo(project)
     val next = sorted[currentIndex + 1]
-    val merged = entry.copy(
-      endMs = maxOf(entry.endMs, next.endMs),
-      text = "${entry.text.trim()}\n${next.text.trim()}"
-    )
+    val merged = SubtitleEditing.merge(entry, next)
 
     val updatedEntries = sorted.filter { it.id != next.id }.map {
       if (it.id == entry.id) merged else it
@@ -549,15 +486,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   fun applyGlobalSync(offsetSeconds: Double) {
     val offsetMs = (offsetSeconds * 1000.0).toLong()
     val project = _uiState.value.project ?: return
-    val clampedCount = project.entries.count { it.startMs + offsetMs < 0L }
     if (offsetMs != 0L) recordUndo(project)
 
-    val shiftedEntries = project.entries.map { entry ->
-      val newStart = (entry.startMs + offsetMs).coerceAtLeast(0L)
-      val duration = (entry.endMs - entry.startMs).coerceAtLeast(100L)
-      val newEnd = (entry.endMs + offsetMs).coerceAtLeast(newStart + duration)
-      entry.copy(startMs = newStart, endMs = newEnd)
-    }.sortedBy { it.startMs }
+    val shift = SubtitleEditing.shiftAll(project.entries, offsetMs)
+    val shiftedEntries = shift.entries
+    val clampedCount = shift.clampedCount
 
     val updatedProject = project.copy(
       entries = shiftedEntries,
@@ -740,23 +673,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   fun nudgeSubtitle(id: Long, mode: NudgeMode, deltaMs: Long) {
     val project = _uiState.value.project ?: return
     val entry = project.entries.firstOrNull { it.id == id } ?: return
-    val minDurationMs = 100L
-
-    var newStart = entry.startMs
-    var newEnd = entry.endMs
-    when (mode) {
-      NudgeMode.START -> {
-        val maxStart = (entry.endMs - minDurationMs).coerceAtLeast(0L)
-        newStart = (entry.startMs + deltaMs).coerceIn(0L, maxStart)
-      }
-      NudgeMode.END -> {
-        newEnd = (entry.endMs + deltaMs).coerceAtLeast(entry.startMs + minDurationMs)
-      }
-      NudgeMode.BOTH -> {
-        val shift = maxOf(deltaMs, -entry.startMs)
-        newStart = entry.startMs + shift
-        newEnd = entry.endMs + shift
-      }
+    val (newStart, newEnd) = when (mode) {
+      NudgeMode.START -> SubtitleEditing.nudgeStart(entry, deltaMs)
+      NudgeMode.END -> SubtitleEditing.nudgeEnd(entry, deltaMs)
+      NudgeMode.BOTH -> SubtitleEditing.nudgeBoth(entry, deltaMs)
     }
     if (newStart == entry.startMs && newEnd == entry.endMs) return
 
@@ -779,30 +699,21 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     triggerImmediateSave(updatedProject)
   }
 
-  private data class EditSnapshot(
-    val entries: List<SubtitleEntry>,
-    val subtitleUri: String?,
-    val subtitleName: String?
-  )
-
   /** Call right before a change to the subtitle lines, with the project as it is now. */
   private fun recordUndo(project: Project) {
     lastNudgeId = null
-    undoStack.addLast(EditSnapshot(project.entries, project.subtitleUri, project.subtitleName))
-    while (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
-    redoStack.clear()
-    _uiState.update { it.copy(canUndo = undoStack.isNotEmpty(), canRedo = redoStack.isNotEmpty()) }
+    history.record(project)
+    _uiState.update { it.copy(canUndo = history.canUndo, canRedo = history.canRedo) }
   }
 
-  fun undo() = restoreFromHistory(from = undoStack, to = redoStack)
+  fun undo() = restoreFromHistory(isUndo = true)
 
-  fun redo() = restoreFromHistory(from = redoStack, to = undoStack)
+  fun redo() = restoreFromHistory(isUndo = false)
 
-  private fun restoreFromHistory(from: ArrayDeque<EditSnapshot>, to: ArrayDeque<EditSnapshot>) {
+  private fun restoreFromHistory(isUndo: Boolean) {
     val project = _uiState.value.project ?: return
-    val snapshot = from.removeLastOrNull() ?: return
+    val snapshot = (if (isUndo) history.undo(project) else history.redo(project)) ?: return
     lastNudgeId = null
-    to.addLast(EditSnapshot(project.entries, project.subtitleUri, project.subtitleName))
     val restored = project.copy(
       entries = snapshot.entries,
       subtitleUri = snapshot.subtitleUri,
@@ -812,8 +723,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     _uiState.update {
       it.copy(
         project = restored,
-        canUndo = undoStack.isNotEmpty(),
-        canRedo = redoStack.isNotEmpty()
+        canUndo = history.canUndo,
+        canRedo = history.canRedo
       )
     }
     updateActiveEntry(_playbackPositionMs.value)
