@@ -7,6 +7,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -46,8 +50,11 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Merge
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -67,17 +74,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subnexa.app.domain.model.SubtitleEntry
+import com.subnexa.app.domain.search.SubtitleSearch
+import com.subnexa.app.domain.validation.IssueType
+import com.subnexa.app.domain.validation.SubtitleIssues
 import com.subnexa.app.domain.parser.TimeUtils
 import com.subnexa.app.ui.components.HairlineCard
 import com.subnexa.app.ui.components.PrimaryAccentButton
@@ -89,10 +104,12 @@ import com.subnexa.app.ui.theme.Border
 import com.subnexa.app.ui.theme.MonospaceTimestampStyle
 import com.subnexa.app.ui.theme.Surface
 import com.subnexa.app.ui.theme.SurfaceVariant
+import com.subnexa.app.ui.theme.SwatchYellow
 import com.subnexa.app.ui.theme.TextMuted
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -127,10 +144,22 @@ fun EditorScreen(
     viewModel.initProject(projectId)
   }
 
+  var showNudge by rememberSaveable { mutableStateOf(false) }
+  var nudgeMode by rememberSaveable { mutableStateOf(NudgeMode.BOTH) }
+  var lastActiveId by remember { mutableStateOf<Long?>(null) }
+  val uiScope = rememberCoroutineScope()
+
+  // The line the nudge buttons act on: the one under the playhead, or the last one that was.
+  LaunchedEffect(uiState.activeEntry?.id) {
+    uiState.activeEntry?.id?.let { lastActiveId = it }
+  }
+
   // Autosave and back handling
   BackHandler {
     if (uiState.isFullscreen) {
       viewModel.toggleFullscreen()
+    } else if (uiState.search.isOpen) {
+      viewModel.closeSearch()
     } else {
       viewModel.saveCurrentStateToDisk()
       onNavigateBack()
@@ -366,12 +395,25 @@ fun EditorScreen(
 
           // 4. Subtitle List Area
           val entries = uiState.project?.entries ?: emptyList()
+          val search = uiState.search
+          val issues = remember(entries) { SubtitleIssues.analyze(entries) }
+          val issueIndexes = remember(entries, issues) {
+            entries.indices.filter { entries[it].id in issues }
+          }
+          val matchIds = remember(entries, search.isOpen, search.query, search.matchCase) {
+            if (search.isOpen) {
+              SubtitleSearch.findMatchIds(entries, search.query, search.matchCase)
+            } else emptyList()
+          }
+          val currentMatchId = matchIds.getOrNull(
+            search.currentIndex.coerceIn(0, (matchIds.size - 1).coerceAtLeast(0))
+          )
 
-          // Count Header
+          // Count header with problem chip, nudge toggle and find toggle
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 10.dp),
+              .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
@@ -382,6 +424,82 @@ fun EditorScreen(
                 fontSize = 14.sp
               ),
               color = TextSecondary
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (issueIndexes.isNotEmpty()) {
+                IssueChip(
+                  count = issueIndexes.size,
+                  onClick = {
+                    // Each tap moves on to the next problem below the first visible line.
+                    val reference = listState.firstVisibleItemIndex
+                    val target = issueIndexes.firstOrNull { it > reference } ?: issueIndexes.first()
+                    uiScope.launch { listState.animateScrollToItem(target) }
+                  }
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+              }
+
+              IconButton(
+                onClick = { showNudge = !showNudge },
+                modifier = Modifier.size(40.dp).testTag("toggle_nudge_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Outlined.Tune,
+                  contentDescription = "Nudge timing",
+                  tint = if (showNudge) Accent else TextSecondary
+                )
+              }
+
+              IconButton(
+                onClick = {
+                  if (search.isOpen) viewModel.closeSearch() else viewModel.openSearch()
+                },
+                modifier = Modifier.size(40.dp).testTag("toggle_search_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Outlined.Search,
+                  contentDescription = "Find and replace",
+                  tint = if (search.isOpen) Accent else TextSecondary
+                )
+              }
+            }
+          }
+
+          AnimatedVisibility(
+            visible = search.isOpen,
+            enter = expandVertically(tween(180)) + fadeIn(tween(150)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(100))
+          ) {
+            EditorSearchBar(
+              state = search,
+              matchCount = matchIds.size,
+              onQueryChange = { viewModel.setSearchQuery(it) },
+              onReplacementChange = { viewModel.setSearchReplacement(it) },
+              onToggleMatchCase = { viewModel.toggleSearchMatchCase() },
+              onToggleReplace = { viewModel.toggleSearchReplace() },
+              onPrevious = { viewModel.stepSearchMatch(forward = false) },
+              onNext = { viewModel.stepSearchMatch(forward = true) },
+              onReplaceCurrent = { viewModel.replaceCurrentMatch() },
+              onReplaceAll = { viewModel.replaceAllMatches() },
+              onClose = { viewModel.closeSearch() }
+            )
+          }
+
+          AnimatedVisibility(
+            visible = showNudge,
+            enter = expandVertically(tween(180)) + fadeIn(tween(150)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(100))
+          ) {
+            val nudgeEntry = entries.firstOrNull { it.id == lastActiveId }
+            EditorNudgeBar(
+              entry = nudgeEntry,
+              lineNumber = entries.indexOfFirst { it.id == lastActiveId } + 1,
+              mode = nudgeMode,
+              onModeChange = { nudgeMode = it },
+              onNudge = { delta ->
+                nudgeEntry?.let { viewModel.nudgeSubtitle(it.id, nudgeMode, delta) }
+              }
             )
           }
 
@@ -445,6 +563,10 @@ fun EditorScreen(
                   index = index + 1,
                   entry = entry,
                   isActive = isActive,
+                  issues = issues[entry.id].orEmpty(),
+                  highlight = if (search.isOpen) search.query else "",
+                  highlightIgnoreCase = !search.matchCase,
+                  isCurrentMatch = entry.id == currentMatchId,
                   onSeek = {
                     viewModel.seekTo(entry.startMs)
                   },
@@ -598,6 +720,10 @@ private fun SubtitleRowItem(
   onDuplicate: () -> Unit,
   onSplitAtPlayhead: () -> Unit,
   onMergeWithNext: () -> Unit,
+  issues: List<IssueType> = emptyList(),
+  highlight: String = "",
+  highlightIgnoreCase: Boolean = true,
+  isCurrentMatch: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   var showMenu by remember { mutableStateOf(false) }
@@ -622,11 +748,16 @@ private fun SubtitleRowItem(
     animationSpec = tween(150),
     label = "row_time"
   )
+  val highlightColor = SwatchYellow.copy(alpha = 0.35f)
+  val displayText = remember(entry.text, highlight, highlightIgnoreCase) {
+    buildHighlightedText(entry.text, highlight, highlightIgnoreCase, highlightColor)
+  }
 
   Box(
     modifier = modifier
       .fillMaxWidth()
       .background(rowBackground)
+      .then(if (isCurrentMatch) Modifier.border(1.dp, Accent.copy(alpha = 0.8f)) else Modifier)
       .combinedClickable(
         onClick = onSeek,
         onLongClick = { showMenu = true }
@@ -664,7 +795,7 @@ private fun SubtitleRowItem(
         modifier = Modifier.weight(1f)
       ) {
         Text(
-          text = entry.text,
+          text = displayText,
           style = MaterialTheme.typography.bodyMedium.copy(
             color = if (isActive) TextPrimary else TextPrimary.copy(alpha = 0.9f),
             fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal,
@@ -680,6 +811,25 @@ private fun SubtitleRowItem(
             fontSize = 11.5.sp
           )
         )
+        if (issues.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(3.dp))
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = Icons.Outlined.WarningAmber,
+              contentDescription = null,
+              tint = SwatchYellow,
+              modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+              text = issues.joinToString("  ·  ") { it.label },
+              style = MaterialTheme.typography.bodySmall.copy(
+                color = SwatchYellow,
+                fontSize = 11.sp
+              )
+            )
+          }
+        }
       }
 
       // Actions: Edit and Delete
@@ -748,6 +898,56 @@ private fun SubtitleRowItem(
           onMergeWithNext()
         }
       )
+    }
+  }
+}
+
+@Composable
+private fun IssueChip(count: Int, onClick: () -> Unit) {
+  val shape = RoundedCornerShape(14.dp)
+  Row(
+    modifier = Modifier
+      .clip(shape)
+      .background(SwatchYellow.copy(alpha = 0.14f))
+      .border(0.5.dp, SwatchYellow.copy(alpha = 0.5f), shape)
+      .clickable(onClick = onClick)
+      .padding(horizontal = 10.dp, vertical = 5.dp)
+      .testTag("issues_chip"),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Icon(
+      imageVector = Icons.Outlined.WarningAmber,
+      contentDescription = null,
+      tint = SwatchYellow,
+      modifier = Modifier.size(14.dp)
+    )
+    Spacer(modifier = Modifier.width(4.dp))
+    Text(
+      text = if (count == 1) "1 problem" else "$count problems",
+      style = MaterialTheme.typography.labelMedium.copy(
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold
+      ),
+      color = SwatchYellow
+    )
+  }
+}
+
+private fun buildHighlightedText(
+  text: String,
+  query: String,
+  ignoreCase: Boolean,
+  color: Color
+): AnnotatedString {
+  if (query.isEmpty()) return AnnotatedString(text)
+  return buildAnnotatedString {
+    append(text)
+    var from = 0
+    while (true) {
+      val at = text.indexOf(query, from, ignoreCase)
+      if (at < 0) break
+      addStyle(SpanStyle(background = color), at, at + query.length)
+      from = at + query.length
     }
   }
 }

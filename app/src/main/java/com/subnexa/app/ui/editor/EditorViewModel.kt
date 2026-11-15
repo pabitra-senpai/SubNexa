@@ -17,6 +17,7 @@ import com.subnexa.app.domain.model.Project
 import com.subnexa.app.domain.model.SubtitleAppearance
 import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.parser.SubtitleParser
+import com.subnexa.app.domain.search.SubtitleSearch
 import com.subnexa.app.domain.sync.TwoPointSync
 import com.subnexa.app.domain.util.FileUtils
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +48,18 @@ sealed interface EditorSheetState {
   data object Appearance : EditorSheetState
 }
 
+enum class NudgeMode { START, END, BOTH }
+
+data class SearchState(
+  val isOpen: Boolean = false,
+  val query: String = "",
+  val replacement: String = "",
+  val matchCase: Boolean = false,
+  val showReplace: Boolean = false,
+  /** Position inside the list of matching lines (0-based). */
+  val currentIndex: Int = 0
+)
+
 sealed interface EditorEvent {
   data class ShowSnackbar(val message: String, val actionLabel: String? = null, val onAction: (() -> Unit)? = null) : EditorEvent
   data class ScrollToIndex(val index: Int) : EditorEvent
@@ -68,7 +81,8 @@ data class EditorUiState(
   val defaultExportFormat: ExportFormat = ExportFormat.SRT,
   val playerError: String? = null,
   val canUndo: Boolean = false,
-  val canRedo: Boolean = false
+  val canRedo: Boolean = false,
+  val search: SearchState = SearchState()
 )
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
@@ -99,6 +113,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private var positionPollingJob: Job? = null
   private var autosaveJob: Job? = null
   private val idGenerator = AtomicLong(1000L)
+  private var lastNudgeId: Long? = null
+  private var lastNudgeAtMs: Long = 0L
   private val undoStack = ArrayDeque<EditSnapshot>()
   private val redoStack = ArrayDeque<EditSnapshot>()
 
@@ -594,6 +610,175 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
+  // ---------------------------------------------------------------- Search / replace
+
+  fun openSearch() {
+    _uiState.update { it.copy(search = it.search.copy(isOpen = true)) }
+  }
+
+  fun closeSearch() {
+    _uiState.update { it.copy(search = SearchState()) }
+  }
+
+  fun setSearchQuery(query: String) {
+    _uiState.update { it.copy(search = it.search.copy(query = query, currentIndex = 0)) }
+    val project = _uiState.value.project ?: return
+    val firstId = SubtitleSearch.findMatchIds(project.entries, query, _uiState.value.search.matchCase)
+      .firstOrNull() ?: return
+    scrollToEntry(project, firstId)
+  }
+
+  fun setSearchReplacement(text: String) {
+    _uiState.update { it.copy(search = it.search.copy(replacement = text)) }
+  }
+
+  fun toggleSearchMatchCase() {
+    _uiState.update {
+      it.copy(search = it.search.copy(matchCase = !it.search.matchCase, currentIndex = 0))
+    }
+  }
+
+  fun toggleSearchReplace() {
+    _uiState.update { it.copy(search = it.search.copy(showReplace = !it.search.showReplace)) }
+  }
+
+  /** Moves to the next (or previous) matching line, scrolls there and seeks the video. */
+  fun stepSearchMatch(forward: Boolean) {
+    val project = _uiState.value.project ?: return
+    val search = _uiState.value.search
+    val ids = SubtitleSearch.findMatchIds(project.entries, search.query, search.matchCase)
+    if (ids.isEmpty()) return
+    val step = if (forward) 1 else -1
+    val next = Math.floorMod(search.currentIndex.coerceIn(0, ids.lastIndex) + step, ids.size)
+    _uiState.update { it.copy(search = it.search.copy(currentIndex = next)) }
+    val entry = project.entries.firstOrNull { it.id == ids[next] } ?: return
+    scrollToEntry(project, entry.id)
+    seekTo(entry.startMs)
+  }
+
+  fun replaceCurrentMatch() {
+    val project = _uiState.value.project ?: return
+    val search = _uiState.value.search
+    val ids = SubtitleSearch.findMatchIds(project.entries, search.query, search.matchCase)
+    if (ids.isEmpty()) return
+    val position = search.currentIndex.coerceIn(0, ids.lastIndex)
+    val targetId = ids[position]
+
+    recordUndo(project)
+    val updatedEntries = project.entries.map { entry ->
+      if (entry.id == targetId) {
+        entry.copy(
+          text = SubtitleSearch.replaceInText(
+            entry.text, search.query, search.replacement, search.matchCase
+          )
+        )
+      } else entry
+    }
+    val updatedProject = project.copy(
+      entries = updatedEntries,
+      lastEditedTimeMs = System.currentTimeMillis()
+    )
+    _uiState.update { it.copy(project = updatedProject) }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerImmediateSave(updatedProject)
+
+    // Show the next match, which now sits at the same position.
+    val remaining = SubtitleSearch.findMatchIds(updatedEntries, search.query, search.matchCase)
+    if (remaining.isNotEmpty()) {
+      val nextPosition = position.coerceAtMost(remaining.lastIndex)
+      _uiState.update { it.copy(search = it.search.copy(currentIndex = nextPosition)) }
+      scrollToEntry(updatedProject, remaining[nextPosition])
+    } else {
+      _uiState.update { it.copy(search = it.search.copy(currentIndex = 0)) }
+    }
+  }
+
+  fun replaceAllMatches() {
+    val project = _uiState.value.project ?: return
+    val search = _uiState.value.search
+    val result = SubtitleSearch.replaceAll(
+      project.entries, search.query, search.replacement, search.matchCase
+    )
+    if (result.changedLines == 0) {
+      viewModelScope.launch { _events.emit(EditorEvent.ShowSnackbar("No matches to replace")) }
+      return
+    }
+
+    recordUndo(project)
+    val updatedProject = project.copy(
+      entries = result.entries,
+      lastEditedTimeMs = System.currentTimeMillis()
+    )
+    _uiState.update {
+      it.copy(project = updatedProject, search = it.search.copy(currentIndex = 0))
+    }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerImmediateSave(updatedProject)
+
+    viewModelScope.launch {
+      _events.emit(
+        EditorEvent.ShowSnackbar(
+          "Replaced ${result.occurrences} in ${result.changedLines} " +
+            if (result.changedLines == 1) "subtitle" else "subtitles"
+        )
+      )
+    }
+  }
+
+  private fun scrollToEntry(project: Project, entryId: Long) {
+    val index = project.entries.indexOfFirst { it.id == entryId }
+    if (index < 0) return
+    viewModelScope.launch { _events.emit(EditorEvent.ScrollToIndex(index)) }
+  }
+
+  // ---------------------------------------------------------------- Quick nudge
+
+  /**
+   * Moves a line's start, end or both by [deltaMs]. Taps on the same line within two seconds
+   * share one undo step, so a burst of nudges can be undone in one go.
+   */
+  fun nudgeSubtitle(id: Long, mode: NudgeMode, deltaMs: Long) {
+    val project = _uiState.value.project ?: return
+    val entry = project.entries.firstOrNull { it.id == id } ?: return
+    val minDurationMs = 100L
+
+    var newStart = entry.startMs
+    var newEnd = entry.endMs
+    when (mode) {
+      NudgeMode.START -> {
+        val maxStart = (entry.endMs - minDurationMs).coerceAtLeast(0L)
+        newStart = (entry.startMs + deltaMs).coerceIn(0L, maxStart)
+      }
+      NudgeMode.END -> {
+        newEnd = (entry.endMs + deltaMs).coerceAtLeast(entry.startMs + minDurationMs)
+      }
+      NudgeMode.BOTH -> {
+        val shift = maxOf(deltaMs, -entry.startMs)
+        newStart = entry.startMs + shift
+        newEnd = entry.endMs + shift
+      }
+    }
+    if (newStart == entry.startMs && newEnd == entry.endMs) return
+
+    val now = System.currentTimeMillis()
+    if (!(lastNudgeId == id && now - lastNudgeAtMs < 2_000L)) {
+      recordUndo(project)
+    }
+    lastNudgeId = id
+    lastNudgeAtMs = now
+
+    val updatedEntries = project.entries
+      .map { if (it.id == id) it.copy(startMs = newStart, endMs = newEnd) else it }
+      .sortedBy { it.startMs }
+    val updatedProject = project.copy(
+      entries = updatedEntries,
+      lastEditedTimeMs = now
+    )
+    _uiState.update { it.copy(project = updatedProject) }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerImmediateSave(updatedProject)
+  }
+
   private data class EditSnapshot(
     val entries: List<SubtitleEntry>,
     val subtitleUri: String?,
@@ -602,6 +787,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   /** Call right before a change to the subtitle lines, with the project as it is now. */
   private fun recordUndo(project: Project) {
+    lastNudgeId = null
     undoStack.addLast(EditSnapshot(project.entries, project.subtitleUri, project.subtitleName))
     while (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
     redoStack.clear()
@@ -615,6 +801,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private fun restoreFromHistory(from: ArrayDeque<EditSnapshot>, to: ArrayDeque<EditSnapshot>) {
     val project = _uiState.value.project ?: return
     val snapshot = from.removeLastOrNull() ?: return
+    lastNudgeId = null
     to.addLast(EditSnapshot(project.entries, project.subtitleUri, project.subtitleName))
     val restored = project.copy(
       entries = snapshot.entries,
