@@ -18,7 +18,6 @@ import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
-import java.security.MessageDigest
 
 object UpdateInstaller {
 
@@ -83,14 +82,11 @@ object UpdateInstaller {
         partFile.delete()
       }
 
-      // 1. Verify SHA-256 if provided
-      val expectedSha256 = updateInfo.sha256?.trim()
-      if (!expectedSha256.isNullOrBlank()) {
-        val calculatedSha256 = computeSha256(targetFile)
-        if (!calculatedSha256.equals(expectedSha256, ignoreCase = true)) {
-          targetFile.delete()
-          throw UpdateException(UpdateError.VERIFICATION_FAILED, "SHA-256 mismatch")
-        }
+      // 1. Verify SHA-256 (mandatory: the manifest parser rejects updates without one)
+      val calculatedSha256 = computeSha256(targetFile)
+      if (!calculatedSha256.equals(updateInfo.sha256.trim(), ignoreCase = true)) {
+        targetFile.delete()
+        throw UpdateException(UpdateError.VERIFICATION_FAILED, "SHA-256 mismatch")
       }
 
       // 2. Verify package name and version code via PackageManager
@@ -159,18 +155,6 @@ object UpdateInstaller {
     } finally {
       connection?.disconnect()
     }
-  }
-
-  private fun computeSha256(file: File): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-    file.inputStream().use { input ->
-      val buffer = ByteArray(8192)
-      var bytesRead: Int
-      while (input.read(buffer).also { bytesRead = it } != -1) {
-        digest.update(buffer, 0, bytesRead)
-      }
-    }
-    return digest.digest().joinToString("") { "%02x".format(it) }
   }
 
   fun canRequestPackageInstalls(context: Context): Boolean {

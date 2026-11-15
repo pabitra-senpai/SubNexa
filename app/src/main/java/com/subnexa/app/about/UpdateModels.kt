@@ -6,7 +6,8 @@ data class AppUpdateInfo(
   val versionCode: Long,
   val versionName: String,
   val apkUrl: String,
-  val sha256: String? = null,
+  /** Lowercase hex SHA-256 of the APK. Required: an update without it is never installed. */
+  val sha256: String,
   val apkSize: Long? = null
 )
 

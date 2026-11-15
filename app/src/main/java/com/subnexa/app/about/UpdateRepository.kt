@@ -46,7 +46,7 @@ object UpdateRepository {
       val versionCode = json.optLong("versionCode", -1L)
       val versionName = json.optString("versionName", "")
       val apkUrl = json.optString("apkUrl", "")
-      val sha256 = if (json.has("sha256") && !json.isNull("sha256")) json.optString("sha256") else null
+      val rawSha256 = if (json.has("sha256") && !json.isNull("sha256")) json.optString("sha256") else null
       val apkSize = if (json.has("apkSize") && !json.isNull("apkSize")) json.optLong("apkSize") else null
 
       if (versionCode <= 0 || versionName.isBlank() || apkUrl.isBlank()) {
@@ -57,11 +57,15 @@ object UpdateRepository {
         throw UpdateException(UpdateError.INVALID_RESPONSE, "APK URL must use HTTPS: $apkUrl")
       }
 
+      // The checksum is mandatory: without it the downloaded APK could not be verified.
+      val sha256 = normalizeSha256(rawSha256)
+        ?: throw UpdateException(UpdateError.INVALID_RESPONSE, "Missing or malformed sha256 in manifest")
+
       AppUpdateInfo(
         versionCode = versionCode,
         versionName = versionName,
         apkUrl = apkUrl,
-        sha256 = sha256?.takeIf { it.isNotBlank() },
+        sha256 = sha256,
         apkSize = apkSize?.takeIf { it > 0 }
       )
     } catch (e: CancellationException) {
