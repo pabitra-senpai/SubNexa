@@ -29,6 +29,28 @@ object SubtitleEditing {
     return ShiftResult(shifted, clampedCount)
   }
 
+  data class DuplicateResult(
+    /** The lines that remain, in their original order. */
+    val entries: List<SubtitleEntry>,
+    /** How many lines were dropped as duplicates. */
+    val removedCount: Int
+  )
+
+  /**
+   * Drops lines that have exactly the same start time, end time and text as an earlier line.
+   * The first of each group is kept (with its own id); the order of the remaining lines does
+   * not change. Text is compared ignoring differences in spaces and line breaks.
+   */
+  fun removeDuplicates(entries: List<SubtitleEntry>): DuplicateResult {
+    val seen = HashSet<Triple<Long, Long, String>>()
+    val kept = ArrayList<SubtitleEntry>(entries.size)
+    for (entry in entries) {
+      val key = Triple(entry.startMs, entry.endMs, entry.text.trim().replace(Regex("\\s+"), " "))
+      if (seen.add(key)) kept += entry
+    }
+    return DuplicateResult(kept, entries.size - kept.size)
+  }
+
   /** A copy of [entry] placed right after it, with the same text and a duration of at least 0.5s. */
   fun duplicate(entry: SubtitleEntry, newId: Long): SubtitleEntry {
     val duration = (entry.endMs - entry.startMs).coerceAtLeast(500L)
