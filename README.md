@@ -34,6 +34,12 @@ SubNexa edits **subtitles only**. Your video is just a reference and is never ch
 - 💾 **Export** as SRT or VTT to any folder you choose
 - 🔁 **Resume** where you left off, with autosave
 
+## Screenshots
+
+
+
+![SubNexa screenshots](docs/screenshots.png)
+
 ## Install
 
 1. Tap **Download APK** above (or open [Releases](https://github.com/pabitra-senpai/SubNexa/releases/latest)).
