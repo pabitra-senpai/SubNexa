@@ -17,6 +17,7 @@ import com.subnexa.app.domain.model.Project
 import com.subnexa.app.domain.model.SubtitleAppearance
 import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.parser.SubtitleParser
+import com.subnexa.app.domain.sync.TwoPointSync
 import com.subnexa.app.domain.util.FileUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,12 +66,15 @@ data class EditorUiState(
   val isFullscreen: Boolean = false,
   val defaultExportFolderUri: String? = null,
   val defaultExportFormat: ExportFormat = ExportFormat.SRT,
-  val playerError: String? = null
+  val playerError: String? = null,
+  val canUndo: Boolean = false,
+  val canRedo: Boolean = false
 )
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
 
   private companion object {
+    const val MAX_HISTORY = 100
     // App-level scope: viewModelScope is already cancelled when onCleared() runs, so the
     // final save must not depend on it. The mutex keeps writes of project files in order.
     val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -95,7 +99,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
   private var positionPollingJob: Job? = null
   private var autosaveJob: Job? = null
   private val idGenerator = AtomicLong(1000L)
-  private val deletedEntriesStack = ArrayDeque<SubtitleEntry>()
+  private val undoStack = ArrayDeque<EditSnapshot>()
+  private val redoStack = ArrayDeque<EditSnapshot>()
 
   private val speedCycle = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
@@ -327,6 +332,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val project = _uiState.value.project ?: return
+    recordUndo(project)
     val newEntry = SubtitleEntry(
       id = idGenerator.getAndIncrement(),
       startMs = startMs,
@@ -362,6 +368,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val project = _uiState.value.project ?: return
+    val hasChanges = project.entries.any {
+      it.id == id && (it.startMs != startMs || it.endMs != endMs || it.text != normalizedText)
+    }
+    if (hasChanges) recordUndo(project)
     val updatedEntries = project.entries.map { entry ->
       if (entry.id == id) {
         entry.copy(startMs = startMs, endMs = endMs, text = normalizedText)
@@ -388,12 +398,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   fun deleteSubtitle(entry: SubtitleEntry) {
     val project = _uiState.value.project ?: return
+    recordUndo(project)
     val updatedEntries = project.entries.filter { it.id != entry.id }
     val updatedProject = project.copy(
       entries = updatedEntries,
       lastEditedTimeMs = System.currentTimeMillis()
     )
-    deletedEntriesStack.addLast(entry)
     _uiState.update { it.copy(project = updatedProject) }
     updateActiveEntry(_playbackPositionMs.value)
     triggerImmediateSave(updatedProject)
@@ -403,16 +413,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         EditorEvent.ShowSnackbar(
           message = "Subtitle deleted",
           actionLabel = "Undo",
-          onAction = { undoDeleteSubtitle() }
+          onAction = { restoreDeletedSubtitle(entry) }
         )
       )
     }
   }
 
-  private fun undoDeleteSubtitle() {
-    if (deletedEntriesStack.isEmpty()) return
-    val entryToRestore = deletedEntriesStack.removeLast()
+  private fun restoreDeletedSubtitle(entryToRestore: SubtitleEntry) {
     val project = _uiState.value.project ?: return
+    if (project.entries.any { it.id == entryToRestore.id }) return
+    recordUndo(project)
     val updatedEntries = (project.entries + entryToRestore).sortedBy { it.startMs }
     val updatedProject = project.copy(
       entries = updatedEntries,
@@ -425,6 +435,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
   fun duplicateSubtitle(entry: SubtitleEntry) {
     val project = _uiState.value.project ?: return
+    recordUndo(project)
     val duration = (entry.endMs - entry.startMs).coerceAtLeast(500L)
     val newStart = entry.endMs + 50L
     val newEnd = newStart + duration
@@ -461,6 +472,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val project = _uiState.value.project ?: return
+    recordUndo(project)
     val words = entry.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
     val midWordIndex = (words.size / 2).coerceAtLeast(1)
     val firstText = words.take(midWordIndex).joinToString(" ").ifEmpty { entry.text.trim() }
@@ -498,6 +510,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       return
     }
 
+    recordUndo(project)
     val next = sorted[currentIndex + 1]
     val merged = entry.copy(
       endMs = maxOf(entry.endMs, next.endMs),
@@ -521,6 +534,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val offsetMs = (offsetSeconds * 1000.0).toLong()
     val project = _uiState.value.project ?: return
     val clampedCount = project.entries.count { it.startMs + offsetMs < 0L }
+    if (offsetMs != 0L) recordUndo(project)
 
     val shiftedEntries = project.entries.map { entry ->
       val newStart = (entry.startMs + offsetMs).coerceAtLeast(0L)
@@ -547,6 +561,76 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         )
       )
     }
+  }
+
+  fun applyTwoPointSync(firstId: Long, firstNewStartMs: Long, lastId: Long, lastNewStartMs: Long) {
+    val project = _uiState.value.project ?: return
+    val result = TwoPointSync.apply(project.entries, firstId, firstNewStartMs, lastId, lastNewStartMs)
+    if (result == null) {
+      viewModelScope.launch {
+        _events.emit(EditorEvent.ShowSnackbar("Invalid sync points"))
+      }
+      return
+    }
+
+    recordUndo(project)
+    val updatedProject = project.copy(
+      entries = result.entries,
+      lastEditedTimeMs = System.currentTimeMillis()
+    )
+    _uiState.update {
+      it.copy(project = updatedProject, sheetState = EditorSheetState.None)
+    }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerImmediateSave(updatedProject)
+
+    viewModelScope.launch {
+      _events.emit(
+        EditorEvent.ShowSnackbar(
+          "Synced ${result.entries.size} subtitles (speed x${String.format(Locale.US, "%.5f", result.scale)})" +
+            if (result.clampedCount > 0) " (${result.clampedCount} stopped at 00:00:00.000)" else ""
+        )
+      )
+    }
+  }
+
+  private data class EditSnapshot(
+    val entries: List<SubtitleEntry>,
+    val subtitleUri: String?,
+    val subtitleName: String?
+  )
+
+  /** Call right before a change to the subtitle lines, with the project as it is now. */
+  private fun recordUndo(project: Project) {
+    undoStack.addLast(EditSnapshot(project.entries, project.subtitleUri, project.subtitleName))
+    while (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
+    redoStack.clear()
+    _uiState.update { it.copy(canUndo = undoStack.isNotEmpty(), canRedo = redoStack.isNotEmpty()) }
+  }
+
+  fun undo() = restoreFromHistory(from = undoStack, to = redoStack)
+
+  fun redo() = restoreFromHistory(from = redoStack, to = undoStack)
+
+  private fun restoreFromHistory(from: ArrayDeque<EditSnapshot>, to: ArrayDeque<EditSnapshot>) {
+    val project = _uiState.value.project ?: return
+    val snapshot = from.removeLastOrNull() ?: return
+    to.addLast(EditSnapshot(project.entries, project.subtitleUri, project.subtitleName))
+    val restored = project.copy(
+      entries = snapshot.entries,
+      subtitleUri = snapshot.subtitleUri,
+      subtitleName = snapshot.subtitleName,
+      lastEditedTimeMs = System.currentTimeMillis()
+    )
+    _uiState.update {
+      it.copy(
+        project = restored,
+        canUndo = undoStack.isNotEmpty(),
+        canRedo = redoStack.isNotEmpty()
+      )
+    }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerImmediateSave(restored)
   }
 
   fun updateAppearance(appearance: SubtitleAppearance) {
@@ -585,6 +669,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
       }
 
       val project = _uiState.value.project ?: return@launch
+      recordUndo(project)
       // Re-assign IDs
       val newEntries = parseResult.entries.map {
         it.copy(id = idGenerator.getAndIncrement())

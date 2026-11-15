@@ -32,6 +32,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Redo
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CallSplit
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -231,6 +233,30 @@ fun EditorScreen(
             maxLines = 1,
             modifier = Modifier.weight(1f)
           )
+
+          IconButton(
+            onClick = { viewModel.undo() },
+            enabled = uiState.canUndo,
+            modifier = Modifier.size(40.dp).testTag("editor_undo_button")
+          ) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Outlined.Undo,
+              contentDescription = "Undo",
+              tint = if (uiState.canUndo) TextPrimary else TextMuted.copy(alpha = 0.5f)
+            )
+          }
+
+          IconButton(
+            onClick = { viewModel.redo() },
+            enabled = uiState.canRedo,
+            modifier = Modifier.size(40.dp).testTag("editor_redo_button")
+          ) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Outlined.Redo,
+              contentDescription = "Redo",
+              tint = if (uiState.canRedo) TextPrimary else TextMuted.copy(alpha = 0.5f)
+            )
+          }
         }
       }
     ) { innerPadding ->
@@ -453,15 +479,17 @@ fun EditorScreen(
     }
 
     is EditorSheetState.GlobalSync -> {
-      val syncStartTimes = remember(uiState.project?.entries) {
-        uiState.project?.entries?.map { it.startMs } ?: emptyList()
-      }
       GlobalSyncBottomSheet(
-        subtitleCount = uiState.project?.entries?.size ?: 0,
-        startTimesMs = syncStartTimes,
+        entries = uiState.project?.entries ?: emptyList(),
+        playbackPositionFlow = viewModel.playbackPositionMs,
+        isPlaying = uiState.isPlaying,
+        onTogglePlayPause = { viewModel.togglePlayPause() },
         onDismiss = { viewModel.closeSheet() },
         onApply = { offsetSeconds ->
           viewModel.applyGlobalSync(offsetSeconds)
+        },
+        onApplyTwoPoint = { firstId, firstMs, lastId, lastMs ->
+          viewModel.applyTwoPointSync(firstId, firstMs, lastId, lastMs)
         }
       )
     }
