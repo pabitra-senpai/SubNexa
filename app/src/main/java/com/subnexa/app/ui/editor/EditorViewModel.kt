@@ -404,6 +404,41 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     triggerImmediateSave(updatedProject)
   }
 
+  /**
+   * Removes lines that repeat an earlier line's exact timing and text. One undo step restores
+   * them all, either from the snackbar or from the undo button in the top bar.
+   */
+  fun removeDuplicates() {
+    val project = _uiState.value.project ?: return
+    val result = SubtitleEditing.removeDuplicates(project.entries)
+    if (result.removedCount == 0) {
+      viewModelScope.launch { _events.emit(EditorEvent.ShowSnackbar("No duplicate subtitles found")) }
+      return
+    }
+    recordUndo(project)
+    val updatedProject = project.copy(
+      entries = result.entries,
+      lastEditedTimeMs = System.currentTimeMillis()
+    )
+    _uiState.update { it.copy(project = updatedProject) }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerImmediateSave(updatedProject)
+
+    val removed = result.removedCount
+    viewModelScope.launch {
+      _events.emit(
+        EditorEvent.ShowSnackbar(
+          message = if (removed == 1) "Removed 1 duplicate" else "Removed $removed duplicates",
+          actionLabel = "Undo",
+          // Only undo from the snackbar if nothing else has been edited since.
+          onAction = {
+            if (_uiState.value.project?.entries == result.entries) undo()
+          }
+        )
+      )
+    }
+  }
+
   fun duplicateSubtitle(entry: SubtitleEntry) {
     val project = _uiState.value.project ?: return
     recordUndo(project)

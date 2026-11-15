@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Search
@@ -37,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -321,6 +323,51 @@ internal fun IssueChip(count: Int, onClick: () -> Unit) {
       ),
       color = SwatchYellow
     )
+  }
+}
+
+/** Slim bar shown only while some lines repeat an earlier line's exact timing and text. */
+@Composable
+internal fun DuplicatesBanner(count: Int, onRemove: () -> Unit) {
+  val shape = RoundedCornerShape(12.dp)
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp, vertical = 4.dp)
+      .clip(shape)
+      .background(Surface)
+      .border(0.5.dp, Border, shape)
+      .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)
+      .testTag("duplicates_banner"),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Icon(
+      imageVector = Icons.Outlined.ContentCopy,
+      contentDescription = null,
+      tint = TextSecondary,
+      modifier = Modifier.size(16.dp)
+    )
+    Spacer(modifier = Modifier.width(8.dp))
+    Text(
+      text = if (count == 1) "1 duplicate line" else "$count duplicate lines",
+      style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+      color = TextSecondary,
+      modifier = Modifier.weight(1f)
+    )
+    TextButton(
+      onClick = onRemove,
+      modifier = Modifier.testTag("remove_duplicates_button")
+    ) {
+      Text(
+        text = "Remove duplicates",
+        style = MaterialTheme.typography.labelLarge.copy(
+          fontSize = 13.sp,
+          fontWeight = FontWeight.SemiBold
+        ),
+        color = Accent
+      )
+    }
   }
 }
 

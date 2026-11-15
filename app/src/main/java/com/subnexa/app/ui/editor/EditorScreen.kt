@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.subnexa.app.domain.edit.SubtitleEditing
 import com.subnexa.app.domain.search.SubtitleSearch
 import com.subnexa.app.domain.validation.SubtitleIssues
 import com.subnexa.app.ui.theme.Accent
@@ -266,6 +267,14 @@ fun EditorScreen(
               if (search.isOpen) viewModel.closeSearch() else viewModel.openSearch()
             }
           )
+
+          val duplicateCount = remember(entries) { SubtitleEditing.removeDuplicates(entries).removedCount }
+          if (duplicateCount > 0) {
+            DuplicatesBanner(
+              count = duplicateCount,
+              onRemove = { viewModel.removeDuplicates() }
+            )
+          }
 
           AnimatedVisibility(
             visible = search.isOpen,
