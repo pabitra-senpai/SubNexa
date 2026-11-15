@@ -80,7 +80,7 @@ import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
   viewModel: HomeViewModel,
@@ -309,6 +309,7 @@ fun HomeScreen(
           )
 
           SwipeToDismissBox(
+            modifier = Modifier.animateItem(),
             state = dismissState,
             enableDismissFromStartToEnd = false,
             enableDismissFromEndToStart = true,
