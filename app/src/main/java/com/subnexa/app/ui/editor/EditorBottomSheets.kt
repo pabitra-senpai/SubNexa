@@ -1,5 +1,11 @@
 package com.subnexa.app.ui.editor
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -301,27 +307,29 @@ fun EditSubtitleBottomSheet(
         )
       }
 
-      // Inline validation error or overlap warning
-      if (!isEndValid && parsedStart != null && parsedEnd != null && parsedEnd <= parsedStart) {
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-          text = "End time must be greater than start time",
-          style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
-        )
-      } else if (overlapWarning != null) {
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(
-            imageVector = Icons.Outlined.WarningAmber,
-            contentDescription = null,
-            tint = SwatchYellow,
-            modifier = Modifier.size(16.dp)
-          )
-          Spacer(modifier = Modifier.width(4.dp))
+      // Inline validation error or overlap warning (height changes smoothly)
+      Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(150))) {
+        if (!isEndValid && parsedStart != null && parsedEnd != null && parsedEnd <= parsedStart) {
+          Spacer(modifier = Modifier.height(6.dp))
           Text(
-            text = overlapWarning,
-            style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
+            text = "End time must be greater than start time",
+            style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
           )
+        } else if (overlapWarning != null) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = Icons.Outlined.WarningAmber,
+              contentDescription = null,
+              tint = SwatchYellow,
+              modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+              text = overlapWarning,
+              style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
+            )
+          }
         }
       }
 
@@ -432,138 +440,148 @@ fun GlobalSyncBottomSheet(
 
       Spacer(modifier = Modifier.height(12.dp))
 
-      if (mode == SyncMode.TWO_POINT) {
-        TwoPointSyncSection(
-          entries = entries,
-          playbackPositionFlow = playbackPositionFlow,
-          isPlaying = isPlaying,
-          onTogglePlayPause = onTogglePlayPause,
-          onDismiss = onDismiss,
-          onApplyTwoPoint = onApplyTwoPoint
-        )
-      } else {
-        Text(
-          text = "Shifts all $subtitleCount subtitles. Start never goes below 00:00:00.000.",
-          style = MaterialTheme.typography.bodySmall,
-          color = TextSecondary
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Quick chips row: -1s, -0.5s, +0.5s, +1s
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          listOf(-1.0, -0.5, 0.5, 1.0).forEach { delta ->
-            Box(
-              modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(SurfaceVariant)
-                .border(0.5.dp, Border, RoundedCornerShape(8.dp))
-                .clickable { adjustOffset(delta) }
-                .padding(vertical = 10.dp),
-              contentAlignment = Alignment.Center
-            ) {
-              Text(
-                text = if (delta > 0) "+${delta}s" else "${delta}s",
-                style = MaterialTheme.typography.labelMedium.copy(
-                  fontWeight = FontWeight.SemiBold,
-                  fontSize = 13.sp
-                ),
-                color = TextPrimary
-              )
-            }
-          }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-          value = offsetSeconds,
-          onValueChange = { offsetSeconds = it },
-          label = { Text("Offset (seconds, signed decimal)") },
-          modifier = Modifier
-            .fillMaxWidth()
-            .testTag("offset_seconds_input"),
-          colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Accent,
-            unfocusedBorderColor = InputBorder,
-            focusedTextColor = TextPrimary,
-            unfocusedTextColor = TextPrimary,
-            cursorColor = Accent
-          ),
-          shape = RoundedCornerShape(8.dp),
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-          singleLine = true
-        )
-
-        if (clampedCount > 0) {
-          Spacer(modifier = Modifier.height(10.dp))
-          Row(verticalAlignment = Alignment.Top) {
-            Icon(
-              imageVector = Icons.Outlined.WarningAmber,
-              contentDescription = null,
-              tint = SwatchYellow,
-              modifier = Modifier
-                .padding(top = 2.dp)
-                .size(16.dp)
+      AnimatedContent(
+        targetState = mode,
+        transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(100)) },
+        label = "sync_mode_transition"
+      ) { currentMode ->
+        Column(modifier = Modifier.fillMaxWidth()) {
+          if (currentMode == SyncMode.TWO_POINT) {
+            TwoPointSyncSection(
+              entries = entries,
+              playbackPositionFlow = playbackPositionFlow,
+              isPlaying = isPlaying,
+              onTogglePlayPause = onTogglePlayPause,
+              onDismiss = onDismiss,
+              onApplyTwoPoint = onApplyTwoPoint
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Column {
-              Text(
-                text = "$clampedCount subtitle(s) would go before 00:00:00.000 and stop at 0, " +
-                  "so their spacing will change. Safest earlier shift: " +
-                  "${String.format(Locale.US, "%.2f", maxSafeEarlierSeconds)}s.",
-                style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
-              )
-              if (maxSafeEarlierSeconds > 0.0) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                  text = "Use safe shift",
-                  style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = Accent
-                  ),
+          } else {
+            Text(
+              text = "Shifts all $subtitleCount subtitles. Start never goes below 00:00:00.000.",
+              style = MaterialTheme.typography.bodySmall,
+              color = TextSecondary
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Quick chips row: -1s, -0.5s, +0.5s, +1s
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              listOf(-1.0, -0.5, 0.5, 1.0).forEach { delta ->
+                Box(
                   modifier = Modifier
-                    .clickable {
-                      offsetSeconds = String.format(Locale.US, "%.2f", -maxSafeEarlierSeconds)
-                    }
-                    .testTag("use_safe_shift")
-                )
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceVariant)
+                    .border(0.5.dp, Border, RoundedCornerShape(8.dp))
+                    .clickable { adjustOffset(delta) }
+                    .padding(vertical = 10.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text(
+                    text = if (delta > 0) "+${delta}s" else "${delta}s",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                      fontWeight = FontWeight.SemiBold,
+                      fontSize = 13.sp
+                    ),
+                    color = TextPrimary
+                  )
+                }
               }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+              value = offsetSeconds,
+              onValueChange = { offsetSeconds = it },
+              label = { Text("Offset (seconds, signed decimal)") },
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("offset_seconds_input"),
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Accent,
+                unfocusedBorderColor = InputBorder,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                cursorColor = Accent
+              ),
+              shape = RoundedCornerShape(8.dp),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true
+            )
+
+            Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(150))) {
+              if (clampedCount > 0) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                  Icon(
+                    imageVector = Icons.Outlined.WarningAmber,
+                    contentDescription = null,
+                    tint = SwatchYellow,
+                    modifier = Modifier
+                      .padding(top = 2.dp)
+                      .size(16.dp)
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Column {
+                    Text(
+                      text = "$clampedCount subtitle(s) would go before 00:00:00.000 and stop at 0, " +
+                        "so their spacing will change. Safest earlier shift: " +
+                        "${String.format(Locale.US, "%.2f", maxSafeEarlierSeconds)}s.",
+                      style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
+                    )
+                    if (maxSafeEarlierSeconds > 0.0) {
+                      Spacer(modifier = Modifier.height(6.dp))
+                      Text(
+                        text = "Use safe shift",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                          fontWeight = FontWeight.SemiBold,
+                          color = Accent
+                        ),
+                        modifier = Modifier
+                          .clickable {
+                            offsetSeconds = String.format(Locale.US, "%.2f", -maxSafeEarlierSeconds)
+                          }
+                          .testTag("use_safe_shift")
+                      )
+                    }
+                  }
+                }
+              }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+              SecondarySubNexaButton(
+                text = "Cancel",
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                testTag = "cancel_sync_button"
+              )
+
+              PrimaryAccentButton(
+                text = "Apply",
+                onClick = {
+                  if (isValid) {
+                    onApply(parsedOffset!!)
+                  }
+                },
+                enabled = isValid,
+                modifier = Modifier.weight(1f),
+                testTag = "apply_sync_button"
+              )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
           }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-          SecondarySubNexaButton(
-            text = "Cancel",
-            onClick = onDismiss,
-            modifier = Modifier.weight(1f),
-            testTag = "cancel_sync_button"
-          )
-
-          PrimaryAccentButton(
-            text = "Apply",
-            onClick = {
-              if (isValid) {
-                onApply(parsedOffset!!)
-              }
-            },
-            enabled = isValid,
-            modifier = Modifier.weight(1f),
-            testTag = "apply_sync_button"
-          )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
       }
     }
   }
@@ -724,43 +742,45 @@ private fun TwoPointSyncForm(
     tagPrefix = "last_point"
   )
 
-  if (sameOldStart) {
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = "These two lines start at the same time. Pick lines that start at different times.",
-      style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
-    )
-  } else if (wrongOrder) {
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = "The last line must start after the first line.",
-      style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
-    )
-  } else if (preview != null) {
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = "First line ${signedSeconds(p1!! - firstEntry.startMs)}s, " +
-        "last line ${signedSeconds(p2!! - lastEntry.startMs)}s, " +
-        "speed x${String.format(Locale.US, "%.5f", preview.scale)}",
-      style = MaterialTheme.typography.bodySmall,
-      color = TextMuted
-    )
-    if (preview.clampedCount > 0) {
-      Spacer(modifier = Modifier.height(6.dp))
-      Row(verticalAlignment = Alignment.Top) {
-        Icon(
-          imageVector = Icons.Outlined.WarningAmber,
-          contentDescription = null,
-          tint = SwatchYellow,
-          modifier = Modifier
-            .padding(top = 2.dp)
-            .size(16.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-          text = "${preview.clampedCount} subtitle(s) would go before 00:00:00.000 and stop at 0.",
-          style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
-        )
+  Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(150))) {
+    if (sameOldStart) {
+      Spacer(modifier = Modifier.height(8.dp))
+      Text(
+        text = "These two lines start at the same time. Pick lines that start at different times.",
+        style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
+      )
+    } else if (wrongOrder) {
+      Spacer(modifier = Modifier.height(8.dp))
+      Text(
+        text = "The last line must start after the first line.",
+        style = MaterialTheme.typography.bodySmall.copy(color = DangerRed)
+      )
+    } else if (preview != null) {
+      Spacer(modifier = Modifier.height(8.dp))
+      Text(
+        text = "First line ${signedSeconds(p1!! - firstEntry.startMs)}s, " +
+          "last line ${signedSeconds(p2!! - lastEntry.startMs)}s, " +
+          "speed x${String.format(Locale.US, "%.5f", preview.scale)}",
+        style = MaterialTheme.typography.bodySmall,
+        color = TextMuted
+      )
+      if (preview.clampedCount > 0) {
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.Top) {
+          Icon(
+            imageVector = Icons.Outlined.WarningAmber,
+            contentDescription = null,
+            tint = SwatchYellow,
+            modifier = Modifier
+              .padding(top = 2.dp)
+              .size(16.dp)
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = "${preview.clampedCount} subtitle(s) would go before 00:00:00.000 and stop at 0.",
+            style = MaterialTheme.typography.bodySmall.copy(color = SwatchYellow)
+          )
+        }
       }
     }
   }

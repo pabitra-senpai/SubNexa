@@ -5,10 +5,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,6 +81,7 @@ import com.subnexa.app.domain.model.SubtitleEntry
 import com.subnexa.app.domain.parser.TimeUtils
 import com.subnexa.app.ui.components.HairlineCard
 import com.subnexa.app.ui.components.PrimaryAccentButton
+import com.subnexa.app.ui.components.pressScale
 import com.subnexa.app.ui.theme.Accent
 import com.subnexa.app.ui.theme.ActiveRowTint
 import com.subnexa.app.ui.theme.Background
@@ -89,7 +94,7 @@ import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun EditorScreen(
   projectId: String,
@@ -234,6 +239,17 @@ fun EditorScreen(
             modifier = Modifier.weight(1f)
           )
 
+          val undoTint by animateColorAsState(
+            targetValue = if (uiState.canUndo) TextPrimary else TextMuted.copy(alpha = 0.5f),
+            animationSpec = tween(150),
+            label = "undo_tint"
+          )
+          val redoTint by animateColorAsState(
+            targetValue = if (uiState.canRedo) TextPrimary else TextMuted.copy(alpha = 0.5f),
+            animationSpec = tween(150),
+            label = "redo_tint"
+          )
+
           IconButton(
             onClick = { viewModel.undo() },
             enabled = uiState.canUndo,
@@ -242,7 +258,7 @@ fun EditorScreen(
             Icon(
               imageVector = Icons.AutoMirrored.Outlined.Undo,
               contentDescription = "Undo",
-              tint = if (uiState.canUndo) TextPrimary else TextMuted.copy(alpha = 0.5f)
+              tint = undoTint
             )
           }
 
@@ -254,7 +270,7 @@ fun EditorScreen(
             Icon(
               imageVector = Icons.AutoMirrored.Outlined.Redo,
               contentDescription = "Redo",
-              tint = if (uiState.canRedo) TextPrimary else TextMuted.copy(alpha = 0.5f)
+              tint = redoTint
             )
           }
         }
@@ -425,6 +441,7 @@ fun EditorScreen(
                 val isActive = index == uiState.activeIndex
 
                 SubtitleRowItem(
+                  modifier = Modifier.animateItem(),
                   index = index + 1,
                   entry = entry,
                   isActive = isActive,
@@ -532,10 +549,16 @@ private fun EditorActionButton(
   modifier: Modifier = Modifier,
   testTag: String
 ) {
+  val interactionSource = remember { MutableInteractionSource() }
   Box(
     modifier = modifier
+      .pressScale(interactionSource)
       .clip(RoundedCornerShape(8.dp))
-      .clickable(onClick = onClick)
+      .clickable(
+        interactionSource = interactionSource,
+        indication = LocalIndication.current,
+        onClick = onClick
+      )
       .padding(vertical = 8.dp)
       .testTag(testTag),
     contentAlignment = Alignment.Center
@@ -574,14 +597,34 @@ private fun SubtitleRowItem(
   onDelete: () -> Unit,
   onDuplicate: () -> Unit,
   onSplitAtPlayhead: () -> Unit,
-  onMergeWithNext: () -> Unit
+  onMergeWithNext: () -> Unit,
+  modifier: Modifier = Modifier
 ) {
   var showMenu by remember { mutableStateOf(false) }
 
-  val rowBackground = if (isActive) ActiveRowTint else Color.Transparent
+  val rowBackground by animateColorAsState(
+    targetValue = if (isActive) ActiveRowTint else ActiveRowTint.copy(alpha = 0f),
+    animationSpec = tween(150),
+    label = "row_background"
+  )
+  val indicatorColor by animateColorAsState(
+    targetValue = if (isActive) Accent else Accent.copy(alpha = 0f),
+    animationSpec = tween(150),
+    label = "row_indicator"
+  )
+  val indexColor by animateColorAsState(
+    targetValue = if (isActive) Accent else TextMuted,
+    animationSpec = tween(150),
+    label = "row_index"
+  )
+  val timeColor by animateColorAsState(
+    targetValue = if (isActive) Accent else TextSecondary,
+    animationSpec = tween(150),
+    label = "row_time"
+  )
 
   Box(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
       .background(rowBackground)
       .combinedClickable(
@@ -600,7 +643,7 @@ private fun SubtitleRowItem(
         modifier = Modifier
           .width(3.dp)
           .height(36.dp)
-          .background(if (isActive) Accent else Color.Transparent)
+          .background(indicatorColor)
       )
 
       Spacer(modifier = Modifier.width(10.dp))
@@ -609,7 +652,7 @@ private fun SubtitleRowItem(
       Text(
         text = "$index",
         style = MonospaceTimestampStyle.copy(
-          color = if (isActive) Accent else TextMuted,
+          color = indexColor,
           fontWeight = FontWeight.Bold,
           fontSize = 12.sp
         ),
@@ -633,7 +676,7 @@ private fun SubtitleRowItem(
         Text(
           text = "${TimeUtils.formatTimestamp(entry.startMs, '.')}  →  ${TimeUtils.formatTimestamp(entry.endMs, '.')}",
           style = MonospaceTimestampStyle.copy(
-            color = if (isActive) Accent else TextSecondary,
+            color = timeColor,
             fontSize = 11.5.sp
           )
         )
