@@ -21,6 +21,9 @@ import java.net.UnknownHostException
 
 object UpdateInstaller {
 
+  /** Reason text of the exception thrown when the downloaded APK does not match the manifest checksum. */
+  const val SHA_MISMATCH_MESSAGE = "SHA-256 mismatch"
+
   suspend fun downloadAndVerifyApk(
     context: Context,
     updateInfo: AppUpdateInfo,
@@ -86,7 +89,7 @@ object UpdateInstaller {
       val calculatedSha256 = computeSha256(targetFile)
       if (!calculatedSha256.equals(updateInfo.sha256.trim(), ignoreCase = true)) {
         targetFile.delete()
-        throw UpdateException(UpdateError.VERIFICATION_FAILED, "SHA-256 mismatch")
+        throw UpdateException(UpdateError.VERIFICATION_FAILED, SHA_MISMATCH_MESSAGE)
       }
 
       // 2. Verify package name and version code via PackageManager
