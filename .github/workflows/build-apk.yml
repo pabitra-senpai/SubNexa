@@ -80,6 +80,9 @@ jobs:
           fi
           echo "Found: $APK"
           cp "$APK" dist/SubNexa.apk
+          # Immutable copy used by the in-app updater, so a manifest always points to the exact
+          # file its checksum was computed from, even after a newer build is published.
+          cp "$APK" "dist/SubNexa-${VERSION_CODE}.apk"
 
       - name: Verify APK signature
         run: |
@@ -96,12 +99,12 @@ jobs:
           if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
             TAG="${GITHUB_REF_NAME}"
           fi
-          SHA256=$(sha256sum dist/SubNexa.apk | awk '{print $1}')
-          SIZE=$(stat -c%s dist/SubNexa.apk)
+          SHA256=$(sha256sum "dist/SubNexa-${VERSION_CODE}.apk" | awk '{print $1}')
+          SIZE=$(stat -c%s "dist/SubNexa-${VERSION_CODE}.apk")
           jq -n \
             --argjson versionCode "$VERSION_CODE" \
             --arg versionName "$VERSION_NAME" \
-            --arg apkUrl "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/SubNexa.apk" \
+            --arg apkUrl "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/SubNexa-${VERSION_CODE}.apk" \
             --arg sha256 "$SHA256" \
             --argjson apkSize "$SIZE" \
             '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, sha256: $sha256, apkSize: $apkSize}' > dist/version.json
@@ -113,6 +116,7 @@ jobs:
           name: SubNexa-APK
           path: |
             dist/SubNexa.apk
+            dist/SubNexa-*.apk
             dist/version.json
 
       - name: Move the latest tag
@@ -134,8 +138,25 @@ jobs:
             Download **SubNexa.apk** below and install it on your Android phone.
           files: |
             dist/SubNexa.apk
+            dist/SubNexa-*.apk
             dist/version.json
           make_latest: true
+
+      - name: Prune old versioned APKs
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Keep the 3 newest SubNexa-<versionCode>.apk files so that a version.json that was
+          # read a little earlier still finds its APK.
+          gh release view latest -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | grep -E '^SubNexa-[0-9]+\.apk$' \
+            | sort -t- -k2 -n -r \
+            | tail -n +4 \
+            | while read -r name; do
+                echo "Deleting old asset $name"
+                gh release delete-asset latest "$name" -R "$GITHUB_REPOSITORY" -y
+              done
 
       - name: Publish versioned release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -143,5 +164,6 @@ jobs:
         with:
           files: |
             dist/SubNexa.apk
+            dist/SubNexa-*.apk
             dist/version.json
           generate_release_notes: true
