@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -58,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -380,95 +382,121 @@ private fun ProjectCard(
 ) {
   val isEmpty = summary.subtitleCount == 0
   val shape = RoundedCornerShape(12.dp)
+  val badgeShape = RoundedCornerShape(6.dp)
+  val badgeBackground = Background.copy(alpha = 0.8f)
 
-  HairlineCard(
+  Column(
     // Tap opens the project, long-press renames it.
     modifier = Modifier
       .fillMaxWidth()
       .clip(shape)
+      .background(Surface)
+      .border(0.5.dp, Border, shape)
       .combinedClickable(onClick = onClick, onLongClick = onRename)
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .aspectRatio(2f)
     ) {
+      VideoThumbnail(
+        videoUri = summary.videoUri,
+        modifier = Modifier.fillMaxSize(),
+        shape = RectangleShape,
+        iconSize = 32.dp
+      )
       Row(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier
+          .align(Alignment.BottomStart)
+          .fillMaxWidth()
+          .padding(10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        VideoThumbnail(
-          videoUri = summary.videoUri,
-          modifier = Modifier.size(56.dp)
+        Text(
+          text = if (isEmpty) "No subtitles" else "${summary.subtitleCount} subtitles",
+          style = MaterialTheme.typography.labelSmall.copy(
+            fontWeight = FontWeight.Medium,
+            fontSize = 11.5.sp
+          ),
+          color = TextPrimary,
+          maxLines = 1,
+          modifier = Modifier
+            .clip(badgeShape)
+            .background(badgeBackground)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
         )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        val label = summary.sourceLabel
+        if (!isEmpty && !label.isNullOrBlank()) {
+          Spacer(modifier = Modifier.width(8.dp))
           Text(
-            text = summary.videoName,
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontWeight = FontWeight.SemiBold,
-              fontSize = 15.sp
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+              fontWeight = FontWeight.Medium,
+              fontSize = 11.5.sp
             ),
             color = TextPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-          )
-          Spacer(modifier = Modifier.height(4.dp))
-          if (isEmpty) {
-            Text(
-              text = "No subtitles yet \u2022 Open to import",
-              style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-              color = Accent,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis
-            )
-          } else {
-            val label = summary.sourceLabel
-            Text(
-              text = if (label.isNullOrBlank()) {
-                "${summary.subtitleCount} subtitles"
-              } else {
-                "${summary.subtitleCount} subtitles \u2022 $label"
-              },
-              style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-              color = TextSecondary,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis
-            )
-          }
-          Spacer(modifier = Modifier.height(2.dp))
-          Text(
-            text = TimeUtils.timeAgo(summary.lastEditedTimeMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+              .clip(badgeShape)
+              .background(Accent)
+              .padding(horizontal = 8.dp, vertical = 3.dp)
           )
         }
       }
+    }
 
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-          onClick = onRename,
-          modifier = Modifier.size(36.dp)
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Edit,
-            contentDescription = "Rename project",
-            tint = TextMuted,
-            modifier = Modifier.size(18.dp)
-          )
-        }
-        IconButton(
-          onClick = onDelete,
-          modifier = Modifier.size(36.dp)
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Delete,
-            contentDescription = "Delete project",
-            tint = TextMuted,
-            modifier = Modifier.size(18.dp)
-          )
-        }
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = summary.videoName,
+          style = MaterialTheme.typography.titleMedium.copy(
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp
+          ),
+          color = TextPrimary,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        val edited = TimeUtils.timeAgo(summary.lastEditedTimeMs)
+        Text(
+          text = if (isEmpty) "Open to import \u2022 $edited" else edited,
+          style = MaterialTheme.typography.bodySmall.copy(
+            fontWeight = if (isEmpty) FontWeight.Medium else FontWeight.Normal
+          ),
+          color = if (isEmpty) Accent else TextMuted,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+      }
+      IconButton(
+        onClick = onRename,
+        modifier = Modifier.size(36.dp)
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Edit,
+          contentDescription = "Rename project",
+          tint = TextMuted,
+          modifier = Modifier.size(18.dp)
+        )
+      }
+      IconButton(
+        onClick = onDelete,
+        modifier = Modifier.size(36.dp)
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Delete,
+          contentDescription = "Delete project",
+          tint = TextMuted,
+          modifier = Modifier.size(18.dp)
+        )
       }
     }
   }

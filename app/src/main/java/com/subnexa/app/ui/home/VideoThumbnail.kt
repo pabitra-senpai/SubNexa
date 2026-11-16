@@ -22,9 +22,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.subnexa.app.ui.theme.Accent
 import com.subnexa.app.ui.theme.SurfaceVariant
@@ -36,14 +38,21 @@ import java.security.MessageDigest
 import java.util.Collections
 
 /**
- * Small square preview of a video, shown on the home screen project cards.
+ * 16:9 preview of a video, shown on the home screen project cards.
  * Frames are grabbed once, then kept in memory and in the app cache folder.
  */
 object VideoThumbnails {
 
-  private const val THUMB_SIZE = 256
+  private const val THUMB_WIDTH = 640
+  private const val THUMB_HEIGHT = 360
 
-  private val memory = LruCache<String, Bitmap>(32)
+  // Cache file suffix. Changing it makes old (square) cached thumbnails unused.
+  private const val CACHE_SUFFIX = "_16x9.jpg"
+
+  // Limited by bitmap bytes (16 MB), not by entry count.
+  private val memory = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+  }
   private val failed: MutableSet<String> = Collections.synchronizedSet(HashSet())
 
   /** Already loaded thumbnail, if any (no disk or decoder work). */
@@ -54,7 +63,7 @@ object VideoThumbnails {
     memory.get(videoUri)?.let { return@withContext it }
 
     val dir = File(context.cacheDir, "thumbs").apply { mkdirs() }
-    val file = File(dir, sha1(videoUri) + ".jpg")
+    val file = File(dir, sha1(videoUri) + CACHE_SUFFIX)
 
     if (file.exists()) {
       val cached = try {
@@ -96,7 +105,7 @@ object VideoThumbnails {
       val source = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
         ?: retriever.getFrameAtTime()
         ?: return null
-      centerCropSquare(source)
+      centerCrop16x9(source)
     } catch (_: Exception) {
       null
     } finally {
@@ -107,15 +116,31 @@ object VideoThumbnails {
     }
   }
 
-  private fun centerCropSquare(source: Bitmap): Bitmap {
-    val side = minOf(source.width, source.height)
-    val cropped = if (source.width == source.height) {
+  private fun centerCrop16x9(source: Bitmap): Bitmap {
+    val targetRatio = THUMB_WIDTH.toFloat() / THUMB_HEIGHT
+    val sourceRatio = source.width.toFloat() / source.height
+    val cropWidth: Int
+    val cropHeight: Int
+    if (sourceRatio > targetRatio) {
+      cropHeight = source.height
+      cropWidth = (cropHeight * targetRatio).toInt().coerceIn(1, source.width)
+    } else {
+      cropWidth = source.width
+      cropHeight = (cropWidth / targetRatio).toInt().coerceIn(1, source.height)
+    }
+    val cropped = if (cropWidth == source.width && cropHeight == source.height) {
       source
     } else {
-      Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
+      Bitmap.createBitmap(
+        source,
+        (source.width - cropWidth) / 2,
+        (source.height - cropHeight) / 2,
+        cropWidth,
+        cropHeight
+      )
     }
-    val scaled = if (cropped.width > THUMB_SIZE) {
-      Bitmap.createScaledBitmap(cropped, THUMB_SIZE, THUMB_SIZE, true)
+    val scaled = if (cropped.width > THUMB_WIDTH) {
+      Bitmap.createScaledBitmap(cropped, THUMB_WIDTH, THUMB_HEIGHT, true)
     } else {
       cropped
     }
@@ -131,7 +156,12 @@ object VideoThumbnails {
 }
 
 @Composable
-fun VideoThumbnail(videoUri: String, modifier: Modifier = Modifier) {
+fun VideoThumbnail(
+  videoUri: String,
+  modifier: Modifier = Modifier,
+  shape: Shape = RoundedCornerShape(10.dp),
+  iconSize: Dp = 22.dp
+) {
   val context = LocalContext.current.applicationContext
   val bitmap by produceState<Bitmap?>(initialValue = VideoThumbnails.peek(videoUri), key1 = videoUri) {
     if (value == null) value = VideoThumbnails.load(context, videoUri)
@@ -139,7 +169,7 @@ fun VideoThumbnail(videoUri: String, modifier: Modifier = Modifier) {
 
   Box(
     modifier = modifier
-      .clip(RoundedCornerShape(10.dp))
+      .clip(shape)
       .background(SurfaceVariant),
     contentAlignment = Alignment.Center
   ) {
@@ -157,7 +187,7 @@ fun VideoThumbnail(videoUri: String, modifier: Modifier = Modifier) {
         imageVector = Icons.Outlined.Movie,
         contentDescription = null,
         tint = Accent,
-        modifier = Modifier.size(22.dp)
+        modifier = Modifier.size(iconSize)
       )
     }
   }
