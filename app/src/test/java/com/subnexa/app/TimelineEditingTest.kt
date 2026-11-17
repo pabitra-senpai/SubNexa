@@ -51,4 +51,27 @@ class TimelineEditingTest {
   fun move_snapsTheEndWhenOnlyTheEndIsClose() {
     assertEquals(Span(1500, 3500), TimelineEditing.move(line, 1520, targets, 100, 0))
   }
+
+  @Test
+  fun assignLanes_putsOverlappingAndDuplicateLinesInDifferentRows() {
+    val layout = TimelineEditing.assignLanes(
+      listOf(entry(1, 0, 1000), entry(2, 0, 1000), entry(3, 500, 1500), entry(4, 1000, 2000))
+    )
+    assertEquals(0, layout.laneOf[1])
+    assertEquals(1, layout.laneOf[2])
+    assertEquals(2, layout.laneOf[3])
+    // Starts exactly when line 1 ends, so it reuses the first row.
+    assertEquals(0, layout.laneOf[4])
+    assertEquals(3, layout.laneCount)
+  }
+
+  @Test
+  fun assignLanes_keepsAtLeastThreeRowsAndNeverMoreThanTheMaximum() {
+    assertEquals(3, TimelineEditing.assignLanes(listOf(entry(1, 0, 500))).laneCount)
+    val many = (1L..8L).map { entry(it, 0, 1000) }
+    val layout = TimelineEditing.assignLanes(many, minLanes = 3, maxLanes = 4)
+    assertEquals(4, layout.laneCount)
+    assertEquals(8, layout.laneOf.size)
+    assertEquals(true, layout.laneOf.values.all { it in 0..3 })
+  }
 }
