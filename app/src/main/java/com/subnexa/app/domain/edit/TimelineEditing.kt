@@ -103,4 +103,37 @@ object TimelineEditing {
     start = start.coerceAtLeast(0L)
     return Span(start, start + length)
   }
+
+  /** Which lane (row) each line sits in, and how many lanes the timeline should show. */
+  data class LaneLayout(val laneOf: Map<Long, Int>, val laneCount: Int)
+
+  /**
+   * Packs lines into rows so that lines which overlap in time (for example duplicates) are
+   * drawn in different rows. A line goes into the first row that is free when it starts.
+   * When every row is taken it goes into the row that becomes free the earliest, so it overlaps
+   * as little as possible. At least [minLanes] rows are returned, at most [maxLanes].
+   */
+  fun assignLanes(entries: List<SubtitleEntry>, minLanes: Int = 3, maxLanes: Int = 4): LaneLayout {
+    val lanes = maxLanes.coerceAtLeast(1)
+    val laneEnd = LongArray(lanes) { Long.MIN_VALUE }
+    val laneOf = HashMap<Long, Int>(entries.size * 2)
+    var used = 0
+    for (entry in entries.sortedWith(compareBy({ it.startMs }, { it.endMs }, { it.id }))) {
+      var lane = -1
+      for (i in 0 until lanes) {
+        if (laneEnd[i] <= entry.startMs) {
+          lane = i
+          break
+        }
+      }
+      if (lane == -1) {
+        lane = 0
+        for (i in 1 until lanes) if (laneEnd[i] < laneEnd[lane]) lane = i
+      }
+      laneEnd[lane] = maxOf(laneEnd[lane], entry.endMs)
+      laneOf[entry.id] = lane
+      if (lane + 1 > used) used = lane + 1
+    }
+    return LaneLayout(laneOf, used.coerceIn(minLanes.coerceAtMost(lanes), lanes))
+  }
 }
