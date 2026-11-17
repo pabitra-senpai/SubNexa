@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -512,7 +511,6 @@ internal fun SelectedLinePanel(
   onSplit: () -> Unit,
   onDuplicate: () -> Unit,
   onDelete: () -> Unit,
-  onNudge: (NudgeMode, Long) -> Unit,
   modifier: Modifier = Modifier
 ) {
   Column(
@@ -549,21 +547,10 @@ internal fun SelectedLinePanel(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-      PanelAction(Icons.Outlined.Edit, "Edit", onEdit, "timeline_edit")
-      PanelAction(Icons.Outlined.ContentCut, "Split", onSplit, "timeline_split")
-      PanelAction(Icons.Outlined.ContentCopy, "Duplicate", onDuplicate, "timeline_duplicate")
-      Spacer(modifier = Modifier.weight(1f))
-      PanelAction(Icons.Outlined.Delete, "Delete", onDelete, "timeline_delete")
-    }
-    Spacer(modifier = Modifier.height(8.dp))
-    // Fine tuning, 0.1 s per tap
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      NudgeGroup("Start", Modifier.weight(1f), { onNudge(NudgeMode.START, -100L) }, { onNudge(NudgeMode.START, 100L) })
-      NudgeGroup("End", Modifier.weight(1f), { onNudge(NudgeMode.END, -100L) }, { onNudge(NudgeMode.END, 100L) })
+      PanelAction(Icons.Outlined.Edit, "Edit", onEdit, "timeline_edit", Modifier.weight(1f))
+      PanelAction(Icons.Outlined.ContentCut, "Split", onSplit, "timeline_split", Modifier.weight(1f))
+      PanelAction(Icons.Outlined.ContentCopy, "Duplicate", onDuplicate, "timeline_duplicate", Modifier.weight(1f))
+      PanelAction(Icons.Outlined.Delete, "Delete", onDelete, "timeline_delete", Modifier.weight(1f))
     }
   }
 }
@@ -573,64 +560,27 @@ private fun PanelAction(
   icon: androidx.compose.ui.graphics.vector.ImageVector,
   label: String,
   onClick: () -> Unit,
-  tag: String
+  tag: String,
+  modifier: Modifier = Modifier
 ) {
   Column(
-    modifier = Modifier
+    modifier = modifier
       .clip(RoundedCornerShape(8.dp))
       .background(SurfaceVariant)
       .clickable(onClick = onClick)
-      .padding(horizontal = 12.dp, vertical = 6.dp)
-      .width(IntrinsicWidthDp)
+      .padding(vertical = 8.dp)
       .testTag(tag),
     horizontalAlignment = Alignment.CenterHorizontally
   ) {
     Icon(icon, contentDescription = label, tint = TextPrimary, modifier = Modifier.size(20.dp))
     Text(
       text = label,
-      style = MaterialTheme.typography.labelSmall,
-      color = TextSecondary
+      style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+      color = TextSecondary,
+      maxLines = 1,
+      softWrap = false
     )
   }
-}
-
-private val IntrinsicWidthDp = 52.dp
-
-@Composable
-private fun NudgeGroup(
-  label: String,
-  modifier: Modifier,
-  onMinus: () -> Unit,
-  onPlus: () -> Unit
-) {
-  Row(
-    modifier = modifier
-      .clip(RoundedCornerShape(8.dp))
-      .background(SurfaceVariant),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    NudgeButton("\u2212 0.1s", onMinus)
-    Text(
-      text = label,
-      modifier = Modifier.weight(1f),
-      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-      style = MaterialTheme.typography.labelMedium,
-      color = TextSecondary
-    )
-    NudgeButton("+ 0.1s", onPlus)
-  }
-}
-
-@Composable
-private fun NudgeButton(text: String, onClick: () -> Unit) {
-  Text(
-    text = text,
-    modifier = Modifier
-      .clickable(onClick = onClick)
-      .padding(horizontal = 10.dp, vertical = 9.dp),
-    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-    color = TextPrimary
-  )
 }
 
 // ------------------------------------------------------------------------------------------

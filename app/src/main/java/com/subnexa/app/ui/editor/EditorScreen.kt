@@ -387,9 +387,6 @@ fun EditorScreen(
                 },
                 onSplit = { selectedEntry?.let { viewModel.splitSubtitleAtPlayhead(it) } },
                 onDuplicate = { selectedEntry?.let { viewModel.duplicateSubtitle(it) } },
-                onNudge = { mode, deltaMs ->
-                  selectedEntry?.let { viewModel.nudgeSubtitle(it.id, mode, deltaMs) }
-                },
                 onDelete = {
                   selectedEntry?.let {
                     viewModel.deleteSubtitle(it)
