@@ -44,12 +44,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +68,9 @@ import com.subnexa.app.ui.theme.TextMuted
 import com.subnexa.app.ui.theme.TextPrimary
 import com.subnexa.app.ui.theme.TextSecondary
 import java.util.Locale
+import android.graphics.Paint
+import android.text.TextPaint
+import android.text.TextUtils
 
 /** Which view fills the area under the action row. */
 internal enum class EditorViewMode { LIST, TIMELINE }
@@ -190,7 +194,10 @@ internal fun SubtitleTimeline(
   val onDragState = rememberUpdatedState(onDrag)
   val onDragEndState = rememberUpdatedState(onDragEnd)
 
-  val textMeasurer = rememberTextMeasurer(cacheSize = 64)
+  // Plain Android paints: no Compose text layout runs while drawing, so drawing cannot throw
+  // from text measuring, and it stays cheap while the timeline scrolls during playback.
+  val labelPaint = remember { TextPaint(Paint.ANTI_ALIAS_FLAG) }
+  val rulerPaint = remember { TextPaint(Paint.ANTI_ALIAS_FLAG) }
 
   Column(modifier = modifier.fillMaxWidth()) {
     // Time readout and zoom buttons
@@ -358,7 +365,8 @@ internal fun SubtitleTimeline(
       val visibleStartMs = pos - centerX / pxPerMs
       val visibleEndMs = pos + centerX / pxPerMs
       var tick = ((visibleStartMs.toLong() / minor) * minor).coerceAtLeast(0L)
-      val rulerStyle = TextStyle(color = TextMuted, fontSize = 10.sp)
+      rulerPaint.textSize = 10.sp.toPx()
+      rulerPaint.color = TextMuted.toArgb()
       while (tick <= visibleEndMs) {
         val x = centerX + (tick - pos) * pxPerMs
         val isMajor = tick % major == 0L
@@ -370,13 +378,12 @@ internal fun SubtitleTimeline(
           strokeWidth = 1.dp.toPx()
         )
         if (isMajor) {
-          drawText(
-            textMeasurer = textMeasurer,
+          drawLabel(
+            paint = rulerPaint,
             text = formatTick(tick, major),
-            topLeft = Offset(x + 3.dp.toPx(), 0f),
-            style = rulerStyle,
-            softWrap = false,
-            maxLines = 1
+            x = x + 3.dp.toPx(),
+            baseline = 12.dp.toPx(),
+            maxWidth = width - x - 3.dp.toPx()
           )
         }
         tick += minor
@@ -389,7 +396,8 @@ internal fun SubtitleTimeline(
       )
 
       // Subtitle blocks. The selected one is drawn last so it stays on top.
-      val textStyle = TextStyle(color = TextPrimary, fontSize = 11.sp)
+      labelPaint.textSize = 12.sp.toPx()
+      labelPaint.color = TextPrimary.toArgb()
       val minBlockPx = 2.dp.toPx()
       var selectedEntry: SubtitleEntry? = null
       for (entry in entries) {
@@ -418,19 +426,13 @@ internal fun SubtitleTimeline(
             style = Stroke(width = 1.5.dp.toPx())
           )
         }
-        val textWidth = right - left - 12.dp.toPx()
-        if (textWidth > 24.dp.toPx() && left < width) {
-          drawText(
-            textMeasurer = textMeasurer,
-            text = blockLabel(entry),
-            topLeft = Offset(left + 6.dp.toPx(), laneTopPx + 6.dp.toPx()),
-            style = textStyle,
-            overflow = TextOverflow.Ellipsis,
-            softWrap = true,
-            maxLines = 3,
-            size = Size(textWidth, laneHeightPx - 12.dp.toPx())
-          )
-        }
+        drawLabel(
+          paint = labelPaint,
+          text = blockLabel(entry),
+          x = left + 6.dp.toPx(),
+          baseline = laneTopPx + laneHeightPx / 2f + 4.dp.toPx(),
+          maxWidth = right - left - 12.dp.toPx()
+        )
       }
 
       selectedEntry?.let { entry ->
@@ -461,20 +463,13 @@ internal fun SubtitleTimeline(
           drawRoundRect(Color.White, Offset(xs + 3.dp.toPx(), handleTop), handleSize, handleRadius)
           drawRoundRect(Color.White, Offset(xe - 3.dp.toPx() - handleWidth, handleTop), handleSize, handleRadius)
 
-          val textLeft = left + 14.dp.toPx()
-          val textWidth = right - left - 28.dp.toPx()
-          if (textWidth > 24.dp.toPx()) {
-            drawText(
-              textMeasurer = textMeasurer,
-              text = blockLabel(entry),
-              topLeft = Offset(textLeft, laneTopPx + 6.dp.toPx()),
-              style = textStyle,
-              overflow = TextOverflow.Ellipsis,
-              softWrap = true,
-              maxLines = 3,
-              size = Size(textWidth, laneHeightPx - 12.dp.toPx())
-            )
-          }
+          drawLabel(
+            paint = labelPaint,
+            text = blockLabel(entry),
+            x = left + 14.dp.toPx(),
+            baseline = laneTopPx + laneHeightPx / 2f + 4.dp.toPx(),
+            maxWidth = right - left - 28.dp.toPx()
+          )
         }
       }
 
@@ -517,6 +512,7 @@ internal fun SelectedLinePanel(
   onSplit: () -> Unit,
   onDuplicate: () -> Unit,
   onDelete: () -> Unit,
+  onNudge: (NudgeMode, Long) -> Unit,
   modifier: Modifier = Modifier
 ) {
   Column(
@@ -559,6 +555,16 @@ internal fun SelectedLinePanel(
       Spacer(modifier = Modifier.weight(1f))
       PanelAction(Icons.Outlined.Delete, "Delete", onDelete, "timeline_delete")
     }
+    Spacer(modifier = Modifier.height(8.dp))
+    // Fine tuning, 0.1 s per tap
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      NudgeGroup("Start", Modifier.weight(1f), { onNudge(NudgeMode.START, -100L) }, { onNudge(NudgeMode.START, 100L) })
+      NudgeGroup("End", Modifier.weight(1f), { onNudge(NudgeMode.END, -100L) }, { onNudge(NudgeMode.END, 100L) })
+    }
   }
 }
 
@@ -590,9 +596,55 @@ private fun PanelAction(
 
 private val IntrinsicWidthDp = 52.dp
 
+@Composable
+private fun NudgeGroup(
+  label: String,
+  modifier: Modifier,
+  onMinus: () -> Unit,
+  onPlus: () -> Unit
+) {
+  Row(
+    modifier = modifier
+      .clip(RoundedCornerShape(8.dp))
+      .background(SurfaceVariant),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    NudgeButton("\u2212 0.1s", onMinus)
+    Text(
+      text = label,
+      modifier = Modifier.weight(1f),
+      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+      style = MaterialTheme.typography.labelMedium,
+      color = TextSecondary
+    )
+    NudgeButton("+ 0.1s", onPlus)
+  }
+}
+
+@Composable
+private fun NudgeButton(text: String, onClick: () -> Unit) {
+  Text(
+    text = text,
+    modifier = Modifier
+      .clickable(onClick = onClick)
+      .padding(horizontal = 10.dp, vertical = 9.dp),
+    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+    color = TextPrimary
+  )
+}
+
 // ------------------------------------------------------------------------------------------
 // Helpers
 // ------------------------------------------------------------------------------------------
+
+/** Draws one line of text, cut with "..." to [maxWidth]. Does nothing when there is no room. */
+private fun DrawScope.drawLabel(paint: TextPaint, text: String, x: Float, baseline: Float, maxWidth: Float) {
+  if (maxWidth < 16f || text.isEmpty()) return
+  val shown = TextUtils.ellipsize(text, paint, maxWidth, TextUtils.TruncateAt.END)
+  drawIntoCanvas { canvas ->
+    canvas.nativeCanvas.drawText(shown, 0, shown.length, x, baseline, paint)
+  }
+}
 
 /** One-line preview of a line's text without style tags, kept short so drawing stays cheap. */
 private fun blockLabel(entry: SubtitleEntry): String =

@@ -255,7 +255,13 @@ fun EditorScreen(
           // List | Timeline switch
           EditorViewToggle(
             mode = viewMode,
-            onModeChange = { viewMode = it }
+            onModeChange = { mode ->
+              viewMode = mode
+              // Entering the timeline: start with the line under the playhead selected.
+              if (mode == EditorViewMode.TIMELINE && selectedLineId == null) {
+                selectedLineId = uiState.activeEntry?.id
+              }
+            }
           )
 
           // Count header with problem chip, nudge toggle and find toggle
@@ -381,6 +387,9 @@ fun EditorScreen(
                 },
                 onSplit = { selectedEntry?.let { viewModel.splitSubtitleAtPlayhead(it) } },
                 onDuplicate = { selectedEntry?.let { viewModel.duplicateSubtitle(it) } },
+                onNudge = { mode, deltaMs ->
+                  selectedEntry?.let { viewModel.nudgeSubtitle(it.id, mode, deltaMs) }
+                },
                 onDelete = {
                   selectedEntry?.let {
                     viewModel.deleteSubtitle(it)
