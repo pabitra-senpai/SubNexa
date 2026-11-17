@@ -734,6 +734,49 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     triggerImmediateSave(updatedProject)
   }
 
+  // ---------------------------------------------------------------- Timeline drag
+
+  private var timingDragRecorded = false
+
+  /** Called when a finger starts trimming or moving a line on the timeline. */
+  fun beginTimingDrag() {
+    timingDragRecorded = false
+  }
+
+  /**
+   * Sets a new start and end for a line while it is being dragged. The whole drag shares one
+   * undo step, which is recorded on the first real change.
+   */
+  fun dragSubtitleTiming(id: Long, startMs: Long, endMs: Long) {
+    if (endMs <= startMs || startMs < 0L) return
+    val project = _uiState.value.project ?: return
+    val entry = project.entries.firstOrNull { it.id == id } ?: return
+    if (entry.startMs == startMs && entry.endMs == endMs) return
+
+    if (!timingDragRecorded) {
+      recordUndo(project)
+      timingDragRecorded = true
+    }
+    val updatedEntries = project.entries
+      .map { if (it.id == id) it.copy(startMs = startMs, endMs = endMs) else it }
+      .sortedBy { it.startMs }
+    val updatedProject = project.copy(
+      entries = updatedEntries,
+      lastEditedTimeMs = System.currentTimeMillis()
+    )
+    _uiState.update { it.copy(project = updatedProject) }
+    updateActiveEntry(_playbackPositionMs.value)
+    triggerDebouncedAutosave()
+  }
+
+  /** Called when the finger leaves the screen after a drag. Saves right away. */
+  fun endTimingDrag() {
+    if (timingDragRecorded) {
+      _uiState.value.project?.let { triggerImmediateSave(it) }
+    }
+    timingDragRecorded = false
+  }
+
   /** Call right before a change to the subtitle lines, with the project as it is now. */
   private fun recordUndo(project: Project) {
     lastNudgeId = null

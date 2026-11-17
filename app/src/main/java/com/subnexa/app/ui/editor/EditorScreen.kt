@@ -89,6 +89,8 @@ fun EditorScreen(
   var showNudge by rememberSaveable { mutableStateOf(false) }
   var nudgeMode by rememberSaveable { mutableStateOf(NudgeMode.BOTH) }
   var lastActiveId by remember { mutableStateOf<Long?>(null) }
+  var viewMode by rememberSaveable { mutableStateOf(EditorViewMode.LIST) }
+  var selectedLineId by rememberSaveable { mutableStateOf<Long?>(null) }
   val uiScope = rememberCoroutineScope()
 
   // The line the nudge buttons act on: the one under the playhead, or the last one that was.
@@ -250,6 +252,12 @@ fun EditorScreen(
             search.currentIndex.coerceIn(0, (matchIds.size - 1).coerceAtLeast(0))
           )
 
+          // List | Timeline switch
+          EditorViewToggle(
+            mode = viewMode,
+            onModeChange = { viewMode = it }
+          )
+
           // Count header with problem chip, nudge toggle and find toggle
           SubtitleListHeader(
             subtitleCount = entries.size,
@@ -257,10 +265,21 @@ fun EditorScreen(
             showNudge = showNudge,
             searchOpen = search.isOpen,
             onIssueClick = {
-              // Each tap moves on to the next problem below the first visible line.
-              val reference = listState.firstVisibleItemIndex
-              val target = issueIndexes.firstOrNull { it > reference } ?: issueIndexes.first()
-              uiScope.launch { listState.animateScrollToItem(target) }
+              if (viewMode == EditorViewMode.TIMELINE) {
+                // Timeline: jump the playhead to the next problem line after the current time.
+                val now = viewModel.playbackPositionMs.value
+                val problemLines = entries.filter { it.id in issues }.sortedBy { it.startMs }
+                val target = problemLines.firstOrNull { it.startMs > now + 1L } ?: problemLines.firstOrNull()
+                if (target != null) {
+                  selectedLineId = target.id
+                  viewModel.seekTo(target.startMs)
+                }
+              } else {
+                // Each tap moves on to the next problem below the first visible line.
+                val reference = listState.firstVisibleItemIndex
+                val target = issueIndexes.firstOrNull { it > reference } ?: issueIndexes.first()
+                uiScope.launch { listState.animateScrollToItem(target) }
+              }
             },
             onToggleNudge = { showNudge = !showNudge },
             onToggleSearch = {
@@ -325,6 +344,48 @@ fun EditorScreen(
               EmptySubtitlesContent(
                 onAddFirst = {
                   viewModel.openSheet(EditorSheetState.Edit(entry = null, isNew = true))
+                }
+              )
+            }
+          } else if (viewMode == EditorViewMode.TIMELINE) {
+            val positionState = viewModel.playbackPositionMs.collectAsStateWithLifecycle()
+            val selectedEntry = entries.firstOrNull { it.id == selectedLineId }
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+            ) {
+              SubtitleTimeline(
+                entries = entries,
+                issues = issues,
+                selectedId = selectedEntry?.id,
+                positionMs = positionState,
+                durationMs = uiState.durationMs,
+                onSelect = { selectedLineId = it },
+                onSeek = { viewModel.seekTo(it) },
+                onScrubStart = { viewModel.pause() },
+                onDragStart = {
+                  viewModel.pause()
+                  viewModel.beginTimingDrag()
+                },
+                onDrag = { id, start, end -> viewModel.dragSubtitleTiming(id, start, end) },
+                onDragEnd = { viewModel.endTimingDrag() }
+              )
+              SelectedLinePanel(
+                entry = selectedEntry,
+                lineNumber = entries.indexOfFirst { it.id == selectedEntry?.id } + 1,
+                onEdit = {
+                  selectedEntry?.let {
+                    viewModel.openSheet(EditorSheetState.Edit(entry = it, isNew = false))
+                  }
+                },
+                onSplit = { selectedEntry?.let { viewModel.splitSubtitleAtPlayhead(it) } },
+                onDuplicate = { selectedEntry?.let { viewModel.duplicateSubtitle(it) } },
+                onDelete = {
+                  selectedEntry?.let {
+                    viewModel.deleteSubtitle(it)
+                    selectedLineId = null
+                  }
                 }
               )
             }
