@@ -51,6 +51,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.subnexa.app.domain.edit.TimelineEditing
@@ -81,10 +82,17 @@ private const val MAX_DP_PER_SEC = 600f
 private const val DEFAULT_DP_PER_SEC = 80f
 private const val ZOOM_BUTTON_FACTOR = 1.5f
 
+private const val MIN_LANES = 3
+private const val MAX_LANES = 4
+
 private val RulerHeight = 22.dp
-private val LaneTop = 30.dp
-private val LaneHeight = 72.dp
-private val TimelineHeight = 112.dp
+private val LaneTop = 28.dp
+private val LaneHeight = 34.dp
+private val LaneGap = 4.dp
+private val TimelineBottomPad = 8.dp
+
+private fun timelineHeight(laneCount: Int): Dp =
+  LaneTop + LaneHeight * laneCount + LaneGap * (laneCount - 1) + TimelineBottomPad
 private val BlockColor = Color(0xFF3F3F46)
 
 // ------------------------------------------------------------------------------------------
@@ -159,8 +167,9 @@ private fun ToggleOption(
 /**
  * Video-editor style track. The playhead stays in the middle and the lines move under it.
  *
- * - Drag on an empty spot (or an unselected line): scrub the video.
- * - Tap a line: select it. Drag the edges of the selected line to trim, its middle to move it.
+ * - Lines that overlap in time (duplicates too) sit in separate rows: 3 rows, up to 4.
+ * - Press a line and drag: select it and move it. Drag the edges of the selected line to trim.
+ * - Drag on an empty spot: scrub the video.
  * - Pinch (or the zoom buttons): zoom in and out.
  *
  * Edges snap to neighbouring lines and to the playhead.
@@ -182,8 +191,16 @@ internal fun SubtitleTimeline(
 ) {
   var dpPerSec by rememberSaveable { mutableStateOf(DEFAULT_DP_PER_SEC) }
 
+  // Rows. While a line is being dragged the rows are frozen, so it stays in its own row
+  // instead of jumping around each time it passes another line.
+  var frozenLayout by remember { mutableStateOf<TimelineEditing.LaneLayout?>(null) }
+  val layout = frozenLayout ?: remember(entries) {
+    TimelineEditing.assignLanes(entries, MIN_LANES, MAX_LANES)
+  }
+
   // The gesture code lives as long as the composable, so it reads the latest values through these.
   val entriesState = rememberUpdatedState(entries)
+  val layoutState = rememberUpdatedState(layout)
   val selectedState = rememberUpdatedState(selectedId)
   val durationState = rememberUpdatedState(durationMs)
   val onSelectState = rememberUpdatedState(onSelect)
@@ -224,7 +241,7 @@ internal fun SubtitleTimeline(
     Canvas(
       modifier = Modifier
         .fillMaxWidth()
-        .height(TimelineHeight)
+        .height(timelineHeight(layout.laneCount))
         .clipToBounds()
         .background(Surface)
         .testTag("subtitle_timeline")
@@ -232,6 +249,7 @@ internal fun SubtitleTimeline(
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val downX = down.position.x
+            val downY = down.position.y
             val centerX = size.width / 2f
             val startPos = positionMs.value
             val startPxPerMs = dpPerSec * density / 1000f
@@ -239,24 +257,64 @@ internal fun SubtitleTimeline(
 
             val touchSlop = viewConfiguration.touchSlop
             val handleZonePx = 28.dp.toPx()
+            val minTouchPx = 28.dp.toPx()
             val snapThresholdMs = (8.dp.toPx() / startPxPerMs).toLong()
 
             val list = entriesState.value
-            val selected = list.firstOrNull { it.id == selectedState.value }
+            val rows = layoutState.value
+            val laneTopPx = LaneTop.toPx()
+            val laneStepPx = LaneHeight.toPx() + LaneGap.toPx()
+            val laneHeightPx = LaneHeight.toPx()
+
+            // Which row is under the finger (-1 when the finger is on the ruler or between rows)?
+            val downLane = if (downY >= laneTopPx) {
+              val row = ((downY - laneTopPx) / laneStepPx).toInt()
+              val inRow = (downY - laneTopPx) - row * laneStepPx <= laneHeightPx
+              if (row < rows.laneCount && inRow) row else -1
+            } else -1
+
+            fun laneOf(entry: SubtitleEntry) = rows.laneOf[entry.id] ?: 0
+            fun xStart(entry: SubtitleEntry) = centerX + (entry.startMs - startPos) * startPxPerMs
+            fun xEnd(entry: SubtitleEntry) = centerX + (entry.endMs - startPos) * startPxPerMs
+
+            // The line under the finger. Very short lines get a wider touch area.
+            fun lineAtDown(): SubtitleEntry? {
+              if (downLane < 0) return null
+              for (i in list.indices.reversed()) {
+                val entry = list[i]
+                if (laneOf(entry) != downLane) continue
+                val xs = xStart(entry)
+                val xe = xEnd(entry)
+                val pad = ((minTouchPx - (xe - xs)) / 2f).coerceAtLeast(0f)
+                if (downX >= xs - pad && downX <= xe + pad) return entry
+              }
+              return null
+            }
 
             // What does this touch do if the finger starts moving?
+            //  - edge of the selected line: trim, anywhere else on a line: move it, empty space: scrub.
             var kind = DragKind.SCRUB
-            if (selected != null) {
-              val xs = centerX + (selected.startMs - startPos) * startPxPerMs
-              val xe = centerX + (selected.endMs - startPos) * startPxPerMs
+            var target: SubtitleEntry? = null
+            val selected = list.firstOrNull { it.id == selectedState.value }
+            if (selected != null && downLane >= 0 && laneOf(selected) == downLane) {
+              val xs = xStart(selected)
+              val xe = xEnd(selected)
               val zone = minOf(handleZonePx, (xe - xs) / 3f)
               val nearStart = kotlin.math.abs(downX - xs)
               val nearEnd = kotlin.math.abs(downX - xe)
-              kind = when {
-                nearStart <= zone && nearStart <= nearEnd -> DragKind.TRIM_START
-                nearEnd <= zone -> DragKind.TRIM_END
-                downX > xs + zone && downX < xe - zone -> DragKind.MOVE
-                else -> DragKind.SCRUB
+              if (nearStart <= zone && nearStart <= nearEnd) {
+                kind = DragKind.TRIM_START
+                target = selected
+              } else if (nearEnd <= zone) {
+                kind = DragKind.TRIM_END
+                target = selected
+              }
+            }
+            if (kind == DragKind.SCRUB) {
+              val hit = lineAtDown()
+              if (hit != null) {
+                kind = DragKind.MOVE
+                target = hit
               }
             }
 
@@ -296,37 +354,42 @@ internal fun SubtitleTimeline(
                 if (!passedSlop) {
                   if (kotlin.math.abs(dx) <= touchSlop) continue
                   passedSlop = true
-                  if (kind == DragKind.SCRUB) {
+                  val grabbed = target
+                  if (kind == DragKind.SCRUB || grabbed == null) {
+                    kind = DragKind.SCRUB
                     onScrubStartState.value()
-                  } else if (selected != null) {
+                  } else {
                     editing = true
-                    targets = TimelineEditing.snapTargets(list, selected.id, startPos)
+                    frozenLayout = rows
+                    if (grabbed.id != selectedState.value) onSelectState.value(grabbed.id)
+                    targets = TimelineEditing.snapTargets(list, grabbed.id, startPos)
                     onDragStartState.value()
                   }
                 }
 
                 val deltaMs = (dx / startPxPerMs).toLong()
+                val line = target
                 when (kind) {
                   DragKind.SCRUB -> {
                     onSeekState.value((startPos - deltaMs).coerceAtLeast(0L))
                   }
-                  DragKind.TRIM_START -> if (selected != null) {
+                  DragKind.TRIM_START -> if (line != null) {
                     val span = TimelineEditing.trimStart(
-                      selected, selected.startMs + deltaMs, targets, snapThresholdMs
+                      line, line.startMs + deltaMs, targets, snapThresholdMs
                     )
-                    onDragState.value(selected.id, span.startMs, span.endMs)
+                    onDragState.value(line.id, span.startMs, span.endMs)
                   }
-                  DragKind.TRIM_END -> if (selected != null) {
+                  DragKind.TRIM_END -> if (line != null) {
                     val span = TimelineEditing.trimEnd(
-                      selected, selected.endMs + deltaMs, targets, snapThresholdMs, durationState.value
+                      line, line.endMs + deltaMs, targets, snapThresholdMs, durationState.value
                     )
-                    onDragState.value(selected.id, span.startMs, span.endMs)
+                    onDragState.value(line.id, span.startMs, span.endMs)
                   }
-                  DragKind.MOVE -> if (selected != null) {
+                  DragKind.MOVE -> if (line != null) {
                     val span = TimelineEditing.move(
-                      selected, selected.startMs + deltaMs, targets, snapThresholdMs, durationState.value
+                      line, line.startMs + deltaMs, targets, snapThresholdMs, durationState.value
                     )
-                    onDragState.value(selected.id, span.startMs, span.endMs)
+                    onDragState.value(line.id, span.startMs, span.endMs)
                   }
                 }
                 change.consume()
@@ -335,12 +398,14 @@ internal fun SubtitleTimeline(
               // Finger lifted without moving: a tap selects the line under it and moves the playhead there.
               if (!passedSlop && !pinching) {
                 val tapMs = (startPos + (downX - centerX) / startPxPerMs).toLong().coerceAtLeast(0L)
-                val hit = list.lastOrNull { tapMs >= it.startMs && tapMs <= it.endMs }
-                onSelectState.value(hit?.id)
+                onSelectState.value(lineAtDown()?.id)
                 onSeekState.value(tapMs)
               }
             } finally {
-              if (editing) onDragEndState.value()
+              if (editing) {
+                frozenLayout = null
+                onDragEndState.value()
+              }
             }
           }
         }
@@ -354,6 +419,7 @@ internal fun SubtitleTimeline(
       val centerX = width / 2f
       val laneTopPx = LaneTop.toPx()
       val laneHeightPx = LaneHeight.toPx()
+      val laneStepPx = laneHeightPx + LaneGap.toPx()
       val radius = CornerRadius(6.dp.toPx())
 
       // Ruler
@@ -394,6 +460,15 @@ internal fun SubtitleTimeline(
         strokeWidth = 1.dp.toPx()
       )
 
+      // Faint stripes show where each row is
+      for (lane in 0 until layout.laneCount) {
+        drawRect(
+          color = SurfaceVariant.copy(alpha = 0.35f),
+          topLeft = Offset(0f, laneTopPx + lane * laneStepPx),
+          size = Size(width, laneHeightPx)
+        )
+      }
+
       // Subtitle blocks. The selected one is drawn last so it stays on top.
       labelPaint.textSize = 12.sp.toPx()
       labelPaint.color = TextPrimary.toArgb()
@@ -407,19 +482,20 @@ internal fun SubtitleTimeline(
         val xs = centerX + (entry.startMs - pos) * pxPerMs
         val xe = centerX + (entry.endMs - pos) * pxPerMs
         if (xe < 0f || xs > width) continue
+        val top = laneTopPx + (layout.laneOf[entry.id] ?: 0) * laneStepPx
         val left = xs.coerceAtLeast(-radius.x)
         val right = maxOf(xe.coerceAtMost(width + radius.x), left + minBlockPx)
         val isActive = pos >= entry.startMs && pos < entry.endMs
         drawRoundRect(
           color = if (isActive) Accent.copy(alpha = 0.5f) else BlockColor,
-          topLeft = Offset(left, laneTopPx),
+          topLeft = Offset(left, top),
           size = Size(right - left, laneHeightPx),
           cornerRadius = radius
         )
         if (issues[entry.id].orEmpty().isNotEmpty()) {
           drawRoundRect(
             color = SwatchYellow,
-            topLeft = Offset(left, laneTopPx),
+            topLeft = Offset(left, top),
             size = Size(right - left, laneHeightPx),
             cornerRadius = radius,
             style = Stroke(width = 1.5.dp.toPx())
@@ -429,7 +505,7 @@ internal fun SubtitleTimeline(
           paint = labelPaint,
           text = blockLabel(entry),
           x = left + 6.dp.toPx(),
-          baseline = laneTopPx + laneHeightPx / 2f + 4.dp.toPx(),
+          baseline = top + laneHeightPx / 2f + 4.dp.toPx(),
           maxWidth = right - left - 12.dp.toPx()
         )
       }
@@ -438,27 +514,28 @@ internal fun SubtitleTimeline(
         val xs = centerX + (entry.startMs - pos) * pxPerMs
         val xe = centerX + (entry.endMs - pos) * pxPerMs
         if (xe >= 0f && xs <= width) {
+          val top = laneTopPx + (layout.laneOf[entry.id] ?: 0) * laneStepPx
           val left = xs.coerceAtLeast(-radius.x)
           val right = maxOf(xe.coerceAtMost(width + radius.x), left + minBlockPx)
           drawRoundRect(
             color = Accent,
-            topLeft = Offset(left, laneTopPx),
+            topLeft = Offset(left, top),
             size = Size(right - left, laneHeightPx),
             cornerRadius = radius
           )
           drawRoundRect(
             color = Color.White,
-            topLeft = Offset(left, laneTopPx),
+            topLeft = Offset(left, top),
             size = Size(right - left, laneHeightPx),
             cornerRadius = radius,
             style = Stroke(width = 2.dp.toPx())
           )
           // Grab handles on both edges
-          val handleWidth = 5.dp.toPx()
-          val handleHeight = 28.dp.toPx()
-          val handleTop = laneTopPx + (laneHeightPx - handleHeight) / 2f
+          val handleWidth = 4.dp.toPx()
+          val handleHeight = 18.dp.toPx()
+          val handleTop = top + (laneHeightPx - handleHeight) / 2f
           val handleSize = Size(handleWidth, handleHeight)
-          val handleRadius = CornerRadius(2.5.dp.toPx())
+          val handleRadius = CornerRadius(2.dp.toPx())
           drawRoundRect(Color.White, Offset(xs + 3.dp.toPx(), handleTop), handleSize, handleRadius)
           drawRoundRect(Color.White, Offset(xe - 3.dp.toPx() - handleWidth, handleTop), handleSize, handleRadius)
 
@@ -466,7 +543,7 @@ internal fun SubtitleTimeline(
             paint = labelPaint,
             text = blockLabel(entry),
             x = left + 14.dp.toPx(),
-            baseline = laneTopPx + laneHeightPx / 2f + 4.dp.toPx(),
+            baseline = top + laneHeightPx / 2f + 4.dp.toPx(),
             maxWidth = right - left - 28.dp.toPx()
           )
         }
@@ -520,8 +597,8 @@ internal fun SelectedLinePanel(
   ) {
     if (entry == null) {
       Text(
-        text = "Tap a line to select it. Drag its edges to trim, its middle to move it. " +
-          "Drag elsewhere to scrub, pinch to zoom.",
+        text = "Press a line and drag to move it. Select it and drag its edges to trim. " +
+          "Drag empty space to scrub, pinch to zoom.",
         style = MaterialTheme.typography.bodySmall,
         color = TextMuted
       )
