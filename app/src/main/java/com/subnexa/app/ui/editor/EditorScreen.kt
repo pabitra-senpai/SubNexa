@@ -366,6 +366,8 @@ fun EditorScreen(
                 issues = issues,
                 selectedId = selectedEntry?.id,
                 positionMs = positionState,
+                isPlaying = uiState.isPlaying,
+                playbackSpeed = uiState.playbackSpeed,
                 durationMs = uiState.durationMs,
                 onSelect = { selectedLineId = it },
                 onSeek = { viewModel.seekTo(it) },
