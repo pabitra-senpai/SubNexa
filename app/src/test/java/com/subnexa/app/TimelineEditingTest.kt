@@ -53,25 +53,43 @@ class TimelineEditingTest {
   }
 
   @Test
-  fun assignLanes_putsOverlappingAndDuplicateLinesInDifferentRows() {
-    val layout = TimelineEditing.assignLanes(
-      listOf(entry(1, 0, 1000), entry(2, 0, 1000), entry(3, 500, 1500), entry(4, 1000, 2000))
+  fun fillLanes_putsOverlappingAndDuplicateLinesInDifferentRows() {
+    val lanes = TimelineEditing.fillLanes(
+      listOf(entry(1, 0, 1000), entry(2, 0, 1000), entry(3, 500, 1500), entry(4, 1000, 2000)),
+      emptyMap(),
+      4
     )
-    assertEquals(0, layout.laneOf[1])
-    assertEquals(1, layout.laneOf[2])
-    assertEquals(2, layout.laneOf[3])
+    assertEquals(0, lanes[1])
+    assertEquals(1, lanes[2])
+    assertEquals(2, lanes[3])
     // Starts exactly when line 1 ends, so it reuses the first row.
-    assertEquals(0, layout.laneOf[4])
-    assertEquals(3, layout.laneCount)
+    assertEquals(0, lanes[4])
   }
 
   @Test
-  fun assignLanes_keepsAtLeastThreeRowsAndNeverMoreThanTheMaximum() {
-    assertEquals(3, TimelineEditing.assignLanes(listOf(entry(1, 0, 500))).laneCount)
+  fun fillLanes_keepsRowsTheUserChoseAndPlacesNewLinesAroundThem() {
+    val old = listOf(entry(1, 0, 1000), entry(2, 2000, 3000))
+    val chosen = mapOf(1L to 3, 2L to 0)
+    val duplicate = entry(3, 0, 1000)
+    val lanes = TimelineEditing.fillLanes(old + duplicate, chosen, 4)
+    assertEquals(3, lanes[1])
+    assertEquals(0, lanes[2])
+    // Row 0 is free between 0 and 1000, so the duplicate goes there.
+    assertEquals(0, lanes[3])
+    assertEquals(3, lanes.size)
+  }
+
+  @Test
+  fun fillLanes_neverUsesMoreRowsThanAsked() {
     val many = (1L..8L).map { entry(it, 0, 1000) }
-    val layout = TimelineEditing.assignLanes(many, minLanes = 3, maxLanes = 4)
-    assertEquals(4, layout.laneCount)
-    assertEquals(8, layout.laneOf.size)
-    assertEquals(true, layout.laneOf.values.all { it in 0..3 })
+    val lanes = TimelineEditing.fillLanes(many, emptyMap(), 4)
+    assertEquals(8, lanes.size)
+    assertEquals(true, lanes.values.all { it in 0..3 })
+  }
+
+  @Test
+  fun fillLanes_ignoresStoredRowsOutsideTheRange() {
+    val lanes = TimelineEditing.fillLanes(listOf(entry(1, 0, 1000)), mapOf(1L to 9), 4)
+    assertEquals(0, lanes[1])
   }
 }
