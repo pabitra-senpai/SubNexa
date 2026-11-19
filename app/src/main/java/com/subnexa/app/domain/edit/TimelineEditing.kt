@@ -104,36 +104,71 @@ object TimelineEditing {
     return Span(start, start + length)
   }
 
-  /** Which lane (row) each line sits in, and how many lanes the timeline should show. */
-  data class LaneLayout(val laneOf: Map<Long, Int>, val laneCount: Int)
-
   /**
-   * Packs lines into rows so that lines which overlap in time (for example duplicates) are
-   * drawn in different rows. A line goes into the first row that is free when it starts.
-   * When every row is taken it goes into the row that becomes free the earliest, so it overlaps
-   * as little as possible. At least [minLanes] rows are returned, at most [maxLanes].
+   * Gives every line that has no row yet a row, and returns the rows of all lines.
+   *
+   * Lines already in [existing] keep their row (the user may have dragged them there). A new
+   * line goes into the first row where it overlaps nothing, so duplicates and overlapping lines
+   * end up in different rows. When every row is busy it goes into the row where it overlaps
+   * the least.
    */
-  fun assignLanes(entries: List<SubtitleEntry>, minLanes: Int = 3, maxLanes: Int = 4): LaneLayout {
-    val lanes = maxLanes.coerceAtLeast(1)
-    val laneEnd = LongArray(lanes) { Long.MIN_VALUE }
-    val laneOf = HashMap<Long, Int>(entries.size * 2)
-    var used = 0
-    for (entry in entries.sortedWith(compareBy({ it.startMs }, { it.endMs }, { it.id }))) {
-      var lane = -1
+  fun fillLanes(entries: List<SubtitleEntry>, existing: Map<Long, Int>, laneCount: Int): Map<Long, Int> {
+    val lanes = laneCount.coerceAtLeast(1)
+    val result = HashMap<Long, Int>(entries.size * 2)
+    val placed = Array(lanes) { ArrayList<SubtitleEntry>() }
+    val missing = ArrayList<SubtitleEntry>()
+    for (entry in entries) {
+      val lane = existing[entry.id]
+      if (lane != null && lane in 0 until lanes) {
+        result[entry.id] = lane
+        placed[lane].add(entry)
+      } else {
+        missing.add(entry)
+      }
+    }
+    if (missing.isEmpty()) return result
+
+    val ordered = missing.sortedWith(compareBy({ it.startMs }, { it.endMs }, { it.id }))
+    if (result.isEmpty()) {
+      // Nothing placed yet (first time): a single pass over the sorted lines is enough.
+      val laneEnd = LongArray(lanes) { Long.MIN_VALUE }
+      for (entry in ordered) {
+        var lane = -1
+        for (i in 0 until lanes) {
+          if (laneEnd[i] <= entry.startMs) {
+            lane = i
+            break
+          }
+        }
+        if (lane == -1) {
+          lane = 0
+          for (i in 1 until lanes) if (laneEnd[i] < laneEnd[lane]) lane = i
+        }
+        laneEnd[lane] = maxOf(laneEnd[lane], entry.endMs)
+        result[entry.id] = lane
+      }
+      return result
+    }
+
+    // Some lines were already placed: compare each new line with what is in every row.
+    for (entry in ordered) {
+      var best = 0
+      var bestOverlap = Long.MAX_VALUE
       for (i in 0 until lanes) {
-        if (laneEnd[i] <= entry.startMs) {
-          lane = i
-          break
+        var overlap = 0L
+        for (other in placed[i]) {
+          val o = minOf(other.endMs, entry.endMs) - maxOf(other.startMs, entry.startMs)
+          if (o > 0L) overlap += o
+        }
+        if (overlap < bestOverlap) {
+          bestOverlap = overlap
+          best = i
+          if (overlap == 0L) break
         }
       }
-      if (lane == -1) {
-        lane = 0
-        for (i in 1 until lanes) if (laneEnd[i] < laneEnd[lane]) lane = i
-      }
-      laneEnd[lane] = maxOf(laneEnd[lane], entry.endMs)
-      laneOf[entry.id] = lane
-      if (lane + 1 > used) used = lane + 1
+      result[entry.id] = best
+      placed[best].add(entry)
     }
-    return LaneLayout(laneOf, used.coerceIn(minLanes.coerceAtMost(lanes), lanes))
+    return result
   }
 }
